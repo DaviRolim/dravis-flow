@@ -13,14 +13,43 @@ pub struct AudioRecorder {
     stream: Option<SendStream>,
     samples: Arc<Mutex<Vec<f32>>>,
     sample_rate: u32,
+    cached_device: Option<cpal::Device>,
+    cached_config: Option<cpal::SupportedStreamConfig>,
 }
 
 impl AudioRecorder {
     pub fn new() -> Self {
-        Self {
+        let mut recorder = Self {
             stream: None,
             samples: Arc::new(Mutex::new(Vec::new())),
             sample_rate: 16_000,
+            cached_device: None,
+            cached_config: None,
+        };
+        recorder.refresh_device();
+        recorder
+    }
+
+    /// Re-query the default input device and config. Call when the user switches audio inputs.
+    pub fn refresh_device(&mut self) {
+        let host = cpal::default_host();
+        match host.default_input_device() {
+            Some(device) => match device.default_input_config() {
+                Ok(config) => {
+                    self.cached_device = Some(device);
+                    self.cached_config = Some(config);
+                }
+                Err(e) => {
+                    eprintln!("audio: failed to cache device config: {e}");
+                    self.cached_device = None;
+                    self.cached_config = None;
+                }
+            },
+            None => {
+                eprintln!("audio: no default input device found during cache");
+                self.cached_device = None;
+                self.cached_config = None;
+            }
         }
     }
 
@@ -32,20 +61,28 @@ impl AudioRecorder {
             return Ok(());
         }
 
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
+        // Populate cache on demand if not available at construction time
+        if self.cached_device.is_none() || self.cached_config.is_none() {
+            self.refresh_device();
+        }
+
+        let device = self
+            .cached_device
+            .as_ref()
             .ok_or_else(|| "No default microphone found".to_string())?;
+        let input_cfg = self
+            .cached_config
+            .as_ref()
+            .ok_or_else(|| "No default input config".to_string())?;
 
-        let input_cfg = device
-            .default_input_config()
-            .map_err(|e| format!("failed to get default input config: {e}"))?;
-
-        let channels = input_cfg.channels() as usize;
-        let sample_rate = input_cfg.sample_rate().0;
+        let (channels, sample_rate, cfg) = {
+            let channels = input_cfg.channels() as usize;
+            let sample_rate = input_cfg.sample_rate().0;
+            let cfg: cpal::StreamConfig = input_cfg.clone().into();
+            (channels, sample_rate, cfg)
+        };
         self.sample_rate = sample_rate;
 
-        let cfg: cpal::StreamConfig = input_cfg.clone().into();
         let shared_samples = Arc::clone(&self.samples);
         let on_level: Arc<dyn Fn(f32) + Send + Sync> = Arc::new(on_level);
         let last_emit = Arc::new(Mutex::new(Instant::now()));
@@ -60,7 +97,8 @@ impl AudioRecorder {
 
         let err_fn = |err| eprintln!("audio stream error: {err}");
 
-        let stream = match input_cfg.sample_format() {
+        let sample_format = input_cfg.sample_format();
+        let stream = match sample_format {
             SampleFormat::F32 => {
                 let samples = Arc::clone(&shared_samples);
                 let level_cb = Arc::clone(&on_level);

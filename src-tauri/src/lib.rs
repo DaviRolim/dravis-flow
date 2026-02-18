@@ -17,6 +17,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use whisper::WhisperEngine;
+use whisper_rs::WhisperContext;
 
 const MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
@@ -36,8 +37,15 @@ struct ModelStatus {
     path: String,
 }
 
+/// Wrapper to make WhisperContext movable across thread boundaries.
+/// Safety: WhisperContext is only accessed while holding whisper_ctx Mutex,
+/// guaranteeing exclusive single-threaded access at all times.
+struct SendWhisperCtx(WhisperContext);
+unsafe impl Send for SendWhisperCtx {}
+
 struct AppState {
     inner_state: Mutex<InnerState>,
+    whisper_ctx: Mutex<Option<SendWhisperCtx>>,
 }
 
 struct InnerState {
@@ -57,6 +65,7 @@ impl AppState {
                 recorder: AudioRecorder::new(),
                 config,
             }),
+            whisper_ctx: Mutex::new(None),
         }
     }
 }
@@ -190,23 +199,22 @@ async fn cancel_recording_inner(app: AppHandle) -> Result<(), String> {
 async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
     let state = app.state::<AppState>();
 
-    let (audio, language, formatting_level, config_clone) = with_state(&state, |inner| {
+    let (audio, language, formatting_level, model_path_str) = with_state(&state, |inner| {
         if inner.status != "recording" {
-            return Ok((
-                Vec::new(),
-                String::new(),
-                String::new(),
-                inner.config.clone(),
-            ));
+            return Ok((Vec::new(), String::new(), String::new(), String::new()));
         }
 
         inner.status = "processing".to_string();
         let samples = inner.recorder.stop()?;
+        let model_path = model_file_path(&inner.config)
+            .to_str()
+            .ok_or_else(|| "invalid model path".to_string())?
+            .to_string();
         Ok((
             samples,
             inner.config.general.language.clone(),
             inner.config.formatting.level.clone(),
-            inner.config.clone(),
+            model_path,
         ))
     })?;
 
@@ -235,9 +243,22 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
     set_widget_state(&app, "processing", Some("Transcribing...".to_string()));
     eprintln!("pipeline: transcribing {} samples", audio.len());
 
+    let app_clone = app.clone();
     let raw_text = tauri::async_runtime::spawn_blocking(move || {
-        let engine = WhisperEngine::new(&config_clone);
-        engine.transcribe(&audio, &language)
+        let state = app_clone.state::<AppState>();
+        let mut ctx_lock = state
+            .whisper_ctx
+            .lock()
+            .map_err(|_| "whisper ctx lock poisoned".to_string())?;
+
+        if ctx_lock.is_none() {
+            eprintln!("pipeline: loading whisper model (first run)");
+            let ctx = whisper::load_context(&model_path_str)?;
+            *ctx_lock = Some(SendWhisperCtx(ctx));
+            eprintln!("pipeline: whisper model loaded and cached");
+        }
+
+        whisper::transcribe_with_ctx(&ctx_lock.as_ref().unwrap().0, &audio, &language)
     })
     .await
     .map_err(|e| format!("transcription task failed: {e}"))??;

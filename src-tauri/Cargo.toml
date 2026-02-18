@@ -26,3 +26,10 @@ dirs = "6"
 reqwest = { version = "0.12", features = ["blocking", "stream", "rustls-tls"] }
 tokio = { version = "1", features = ["full"] }
 tauri-plugin-global-shortcut = "2.3.1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

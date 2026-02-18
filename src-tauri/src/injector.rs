@@ -13,7 +13,7 @@ pub fn paste_text(text: &str) -> Result<(), String> {
         .set_text(text.to_string())
         .map_err(|e| format!("clipboard set failed: {e}"))?;
 
-    thread::sleep(Duration::from_millis(50));
+    thread::sleep(Duration::from_millis(20));
     eprintln!("injector: triggering paste shortcut");
 
     #[cfg(target_os = "macos")]
@@ -44,7 +44,7 @@ pub fn paste_text(text: &str) -> Result<(), String> {
             .map_err(|e| format!("release ctrl failed: {e}"))?;
     }
 
-    thread::sleep(Duration::from_millis(50));
+    thread::sleep(Duration::from_millis(20));
 
     if let Some(previous_text) = previous {
         let _ = clipboard.set_text(previous_text);

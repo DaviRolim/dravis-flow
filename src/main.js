@@ -92,18 +92,28 @@ function initBars() {
 
 function resetBars() {
   bars.forEach((bar) => {
-    bar.style.height = "6px";
+    bar.style.transform = "scaleY(0.22)";
   });
 }
 
+let pendingLevel = 0;
+let rafScheduled = false;
+
 function renderLevel(level) {
-  const scaled = Math.max(0.03, Math.min(1, Number(level || 0) * 2.6));
-  bars.forEach((bar, index) => {
-    const phase = Math.sin((index + 1) * 1.1) * 0.14;
-    const noise = (index % 4) * 0.06;
-    const height = 4 + Math.round((scaled + 0.16 + phase + noise) * 18);
-    bar.style.height = `${Math.max(4, height)}px`;
-  });
+  pendingLevel = level;
+  if (!rafScheduled) {
+    rafScheduled = true;
+    requestAnimationFrame(() => {
+      rafScheduled = false;
+      const scaled = Math.max(0.03, Math.min(1, Number(pendingLevel || 0) * 2.6));
+      bars.forEach((bar, index) => {
+        const phase = Math.sin((index + 1) * 1.1) * 0.14;
+        const noise = (index % 4) * 0.06;
+        const height = 4 + Math.round((scaled + 0.16 + phase + noise) * 18);
+        bar.style.transform = `scaleY(${Math.max(4, height) / 18})`;
+      });
+    });
+  }
 }
 
 function setWidgetButtonsEnabled(enabled) {
@@ -151,7 +161,10 @@ async function initSetupView() {
   setupEl.classList.remove("hidden");
   widgetEl.classList.add("hidden");
 
-  await loadConfig();
+  const [, modelResult] = await Promise.all([
+    loadConfig(),
+    invoke("check_model").catch((error) => ({ error })),
+  ]);
 
   modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -159,17 +172,14 @@ async function initSetupView() {
     });
   });
 
-  try {
-    const model = await invoke("check_model");
-    if (model.exists) {
-      setupMessageEl.textContent = "Model ready. Close this window and use the hotkey.";
-      downloadBtn.classList.add("hidden");
-    } else {
-      setupMessageEl.textContent = `Model missing at ${model.path}`;
-      downloadBtn.classList.remove("hidden");
-    }
-  } catch (error) {
-    setupMessageEl.textContent = `Error checking model: ${error}`;
+  if (modelResult && modelResult.error) {
+    setupMessageEl.textContent = `Error checking model: ${modelResult.error}`;
+  } else if (modelResult && modelResult.exists) {
+    setupMessageEl.textContent = "Model ready. Close this window and use the hotkey.";
+    downloadBtn.classList.add("hidden");
+  } else if (modelResult) {
+    setupMessageEl.textContent = `Model missing at ${modelResult.path}`;
+    downloadBtn.classList.remove("hidden");
   }
 
   downloadBtn.addEventListener("click", async () => {
@@ -222,14 +232,15 @@ async function initWidgetView() {
   stopBtn.addEventListener("click", () => runWidgetAction("stop_recording"));
   cancelBtn.addEventListener("click", () => runWidgetAction("cancel_recording"));
 
-  await listen("audio_level", (event) => {
-    renderLevel(event.payload || 0);
-  });
-
-  await listen("status", (event) => {
-    const payload = event.payload || {};
-    setWidgetStatus(payload.status || "idle", payload.message || "");
-  });
+  await Promise.all([
+    listen("audio_level", (event) => {
+      renderLevel(event.payload || 0);
+    }),
+    listen("status", (event) => {
+      const payload = event.payload || {};
+      setWidgetStatus(payload.status || "idle", payload.message || "");
+    }),
+  ]);
 
   try {
     const currentStatus = await invoke("get_status");
