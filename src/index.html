@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DraVis Flow</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="/main.js" defer></script>
+  </head>
+  <body>
+    <main id="setup" class="setup hidden">
+      <h1>DraVis Flow</h1>
+      <p class="lead">Local voice-to-text with Whisper.</p>
+      <p id="setup-message">Checking local model...</p>
+      <button id="download-btn" class="primary hidden">Download Model (150MB)</button>
+      <div id="progress-wrap" class="progress-wrap hidden">
+        <div class="progress-track">
+          <div id="progress" class="progress-bar"></div>
+        </div>
+        <span id="progress-text">0%</span>
+      </div>
+      <p class="hint">Hotkey: <code>Ctrl+Shift+Space</code> (hold to record)</p>
+    </main>
+
+    <main id="widget" class="widget-root hidden" aria-live="polite">
+      <div class="recording-pill" id="recording-pill">
+        <span id="rec-dot" class="rec-dot" aria-hidden="true"></span>
+        <div class="waveform" id="waveform" aria-hidden="true"></div>
+        <span id="status-text">Recording...</span>
+      </div>
+    </main>
+  </body>
+</html>
