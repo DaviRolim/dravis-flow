@@ -5,7 +5,9 @@ use std::time::{Duration, Instant};
 
 /// Wrapper to make cpal::Stream usable inside Mutex<InnerState>.
 /// Safety: Stream is only accessed behind a Mutex, so concurrent use is impossible.
-struct SendStream(Stream);
+struct SendStream {
+    _stream: Stream,
+}
 unsafe impl Send for SendStream {}
 unsafe impl Sync for SendStream {}
 
@@ -159,7 +161,7 @@ impl AudioRecorder {
             .play()
             .map_err(|e| format!("failed to start input stream: {e}"))?;
 
-        self.stream = Some(SendStream(stream));
+        self.stream = Some(SendStream { _stream: stream });
         Ok(())
     }
 

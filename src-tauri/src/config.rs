@@ -87,6 +87,7 @@ pub fn model_filename(model_name: &str) -> &'static str {
     }
 }
 
+#[cfg(test)]
 pub fn model_download_url(model_name: &str) -> &'static str {
     match normalized_model_name(model_name) {
         MODEL_SMALL_EN => {

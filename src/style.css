@@ -350,21 +350,22 @@ body.view-widget {
 .recording-pill {
   display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: 5px 6px;
+  gap: 7px;
+  padding: 6px 7px;
   border-radius: var(--radius-pill);
-  border: 1px solid rgba(180, 79, 255, 0.62);
-  background: rgba(17, 17, 24, 0.96);
-  box-shadow: var(--glow-md);
+  border: 1px solid rgba(180, 79, 255, 0.5);
+  background: rgba(14, 14, 20, 0.92);
+  box-shadow: 0 10px 28px rgba(4, 3, 12, 0.68), 0 0 0 1px rgba(180, 79, 255, 0.16);
   opacity: 0;
-  transform: translateY(6px) scale(0.97);
-  transition: opacity 0.16s ease, transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  transform: translateY(8px) scale(0.78);
+  transition: opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1), transform 0.26s
+      cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease, box-shadow 0.2s ease;
   pointer-events: none;
 }
 
 .recording-pill.visible {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: translateY(0) scale(0.8);
   pointer-events: auto;
 }
 
@@ -389,7 +390,8 @@ body.view-widget {
   cursor: pointer;
   font-family: var(--font-title);
   line-height: 1;
-  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease,
+    box-shadow 0.2s ease, opacity 0.2s ease;
 }
 
 .widget-btn:hover:enabled {
@@ -430,26 +432,29 @@ body.view-widget {
 }
 
 .waveform-wrap {
-  min-width: 132px;
+  min-width: 148px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .waveform {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: 3px;
-  height: 16px;
+  gap: 4px;
+  height: 28px;
 }
 
 .waveform .bar {
-  width: 3px;
-  height: 14px;
+  width: 4px;
+  height: 24px;
   background: linear-gradient(180deg, #ff00ff, #b44fff);
   border-radius: var(--radius-pill);
-  box-shadow: 0 0 6px rgba(229, 53, 171, 0.44);
-  transform: scaleY(0.22);
+  box-shadow: 0 0 8px rgba(229, 53, 171, 0.34);
+  transform: scaleY(0.18);
   transform-origin: bottom;
-  transition: transform 0.1s ease;
+  transition: transform 0.08s cubic-bezier(0.33, 1, 0.68, 1);
 }
 
 .recording-pill.processing .waveform .bar {
@@ -460,25 +465,6 @@ body.view-widget {
 .recording-pill.error .waveform .bar {
   background: rgba(255, 90, 134, 0.9);
   box-shadow: none;
-}
-
-.status-text {
-  display: block;
-  margin-top: 1px;
-  text-align: center;
-  font-family: var(--font-code);
-  letter-spacing: 0.14em;
-  font-size: 0.6rem;
-  color: var(--color-accent-secondary);
-  text-transform: uppercase;
-}
-
-.recording-pill.processing .status-text {
-  color: #f4a6ff;
-}
-
-.recording-pill.error .status-text {
-  color: #ff9ab6;
 }
 
 .stop-square {

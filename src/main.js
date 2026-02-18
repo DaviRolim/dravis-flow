@@ -15,7 +15,6 @@ const hotkeyHintEl = document.getElementById("hotkey-hint");
 const modeButtons = Array.from(document.querySelectorAll(".mode-btn"));
 
 const pill = document.getElementById("recording-pill");
-const statusText = document.getElementById("status-text");
 const waveformEl = document.getElementById("waveform");
 const stopBtn = document.getElementById("stop-btn");
 const cancelBtn = document.getElementById("cancel-btn");
@@ -23,6 +22,8 @@ const cancelBtn = document.getElementById("cancel-btn");
 let bars = [];
 let currentMode = "hold";
 let widgetActionPending = false;
+const BAR_MIN_SCALE = 0.18;
+const BAR_MAX_SCALE = 1.34;
 
 function normalizeMode(mode) {
   return mode === "toggle" ? "toggle" : "hold";
@@ -88,32 +89,68 @@ function initBars() {
     waveformEl.appendChild(bar);
     return bar;
   });
+  barScales = Array.from({ length: bars.length }, () => BAR_MIN_SCALE);
 }
 
 function resetBars() {
-  bars.forEach((bar) => {
-    bar.style.transform = "scaleY(0.22)";
+  pendingLevel = 0;
+  smoothedLevel = 0;
+  bars.forEach((bar, index) => {
+    barScales[index] = BAR_MIN_SCALE;
+    bar.style.transform = `scaleY(${BAR_MIN_SCALE})`;
   });
 }
 
 let pendingLevel = 0;
-let rafScheduled = false;
+let smoothedLevel = 0;
+let barScales = [];
+let waveformAnimationFrame = 0;
 
 function renderLevel(level) {
-  pendingLevel = level;
-  if (!rafScheduled) {
-    rafScheduled = true;
-    requestAnimationFrame(() => {
-      rafScheduled = false;
-      const scaled = Math.max(0.03, Math.min(1, Number(pendingLevel || 0) * 2.6));
-      bars.forEach((bar, index) => {
-        const phase = Math.sin((index + 1) * 1.1) * 0.14;
-        const noise = (index % 4) * 0.06;
-        const height = 4 + Math.round((scaled + 0.16 + phase + noise) * 18);
-        bar.style.transform = `scaleY(${Math.max(4, height) / 18})`;
-      });
-    });
+  pendingLevel = Math.max(0, Math.min(1, Number(level || 0)));
+}
+
+function animateWaveform(timestamp) {
+  smoothedLevel += (pendingLevel - smoothedLevel) * 0.18;
+  const energy = Math.max(0.04, Math.min(1, smoothedLevel * 2.9));
+  const curvedEnergy = 1 - (1 - energy) * (1 - energy);
+  const midpoint = (bars.length - 1) / 2 || 1;
+
+  bars.forEach((bar, index) => {
+    const distance = Math.abs(index - midpoint) / midpoint;
+    const arch = Math.cos(distance * Math.PI * 0.5);
+    const inCurve = Math.sin(timestamp * 0.012 + index * 0.62) * 0.13;
+    const outCurve = Math.sin(timestamp * 0.018 - distance * 3.1) * 0.09;
+    const sway = Math.sin(timestamp * 0.006 + index * 0.41) * 0.05;
+    const base = BAR_MIN_SCALE + arch * 0.24;
+    const lift = curvedEnergy * (0.42 + arch * 0.62);
+    const targetScale = Math.max(
+      BAR_MIN_SCALE,
+      Math.min(BAR_MAX_SCALE, base + lift + inCurve + outCurve + sway),
+    );
+    const previousScale = barScales[index] ?? BAR_MIN_SCALE;
+    const nextScale = previousScale + (targetScale - previousScale) * 0.34;
+
+    barScales[index] = nextScale;
+    bar.style.transform = `scaleY(${nextScale})`;
+  });
+
+  waveformAnimationFrame = window.requestAnimationFrame(animateWaveform);
+}
+
+function startWaveformAnimation() {
+  if (waveformAnimationFrame) {
+    return;
   }
+  waveformAnimationFrame = window.requestAnimationFrame(animateWaveform);
+}
+
+function stopWaveformAnimation() {
+  if (!waveformAnimationFrame) {
+    return;
+  }
+  window.cancelAnimationFrame(waveformAnimationFrame);
+  waveformAnimationFrame = 0;
 }
 
 function setWidgetButtonsEnabled(enabled) {
@@ -126,15 +163,15 @@ function setWidgetStatus(status, message = "") {
   pill.classList.remove("processing", "error");
 
   if (nextStatus === "recording") {
-    statusText.textContent = "REC";
     setWidgetButtonsEnabled(true);
     pill.classList.add("visible");
+    startWaveformAnimation();
     return;
   }
 
   if (nextStatus === "processing") {
-    statusText.textContent = "PROC";
     setWidgetButtonsEnabled(false);
+    stopWaveformAnimation();
     resetBars();
     pill.classList.add("processing", "visible");
     return;
@@ -142,8 +179,8 @@ function setWidgetStatus(status, message = "") {
 
   if (nextStatus === "error") {
     console.error("Widget status error:", message || "Recording failed");
-    statusText.textContent = "ERR";
     setWidgetButtonsEnabled(false);
+    stopWaveformAnimation();
     resetBars();
     pill.classList.add("error", "visible");
     window.setTimeout(() => {
@@ -153,6 +190,7 @@ function setWidgetStatus(status, message = "") {
   }
 
   setWidgetButtonsEnabled(false);
+  stopWaveformAnimation();
   resetBars();
   pill.classList.remove("visible", "processing", "error");
 }
