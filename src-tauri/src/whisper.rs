@@ -41,6 +41,9 @@ pub fn transcribe_with_ctx(
     params.set_translate(false);
     params.set_language(Some(language));
     params.set_n_threads(4);
+    params.set_initial_prompt("Clean, well-punctuated English text with proper capitalization.");
+    params.set_suppress_blank(true);
+    params.set_suppress_non_speech_tokens(true);
 
     state
         .full(params, audio)
