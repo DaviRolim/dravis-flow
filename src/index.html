@@ -9,24 +9,67 @@
   </head>
   <body>
     <main id="setup" class="setup hidden">
-      <h1>DraVis Flow</h1>
-      <p class="lead">Local voice-to-text with Whisper.</p>
-      <p id="setup-message">Checking local model...</p>
-      <button id="download-btn" class="primary hidden">Download Model (150MB)</button>
-      <div id="progress-wrap" class="progress-wrap hidden">
-        <div class="progress-track">
-          <div id="progress" class="progress-bar"></div>
+      <header class="window-head">
+        <div class="window-lights" aria-hidden="true">
+          <span class="light light-red"></span>
+          <span class="light light-yellow"></span>
+          <span class="light light-green"></span>
         </div>
-        <span id="progress-text">0%</span>
-      </div>
-      <p class="hint">Hotkey: <code>Ctrl+Shift+Space</code> (hold to record)</p>
+
+        <div class="window-title">
+          <p class="eyebrow">Voice Console</p>
+          <h1>DraVis Flow</h1>
+          <p class="lead">Control your local Whisper recording pipeline.</p>
+        </div>
+      </header>
+
+      <section class="panel">
+        <h2>Recording Mode</h2>
+        <p class="panel-copy">Choose how the global hotkey behaves.</p>
+
+        <div id="mode-switch" class="mode-switch" role="radiogroup" aria-label="Recording mode">
+          <button id="mode-hold" class="mode-btn" type="button" data-mode="hold" role="radio">
+            <span class="mode-title">Hold to talk</span>
+            <span class="mode-copy">Hold hotkey to record, release to transcribe.</span>
+          </button>
+          <button id="mode-toggle" class="mode-btn" type="button" data-mode="toggle" role="radio">
+            <span class="mode-title">Toggle recording</span>
+            <span class="mode-copy">Press hotkey once to start, once to stop.</span>
+          </button>
+        </div>
+
+        <p id="mode-status" class="mode-status">Loading recording mode...</p>
+      </section>
+
+      <section class="panel">
+        <h2>Speech Model</h2>
+        <p id="setup-message">Checking local model...</p>
+        <button id="download-btn" class="primary hidden">Download Model (150MB)</button>
+        <div id="progress-wrap" class="progress-wrap hidden">
+          <div class="progress-track">
+            <div id="progress" class="progress-bar"></div>
+          </div>
+          <span id="progress-text">0%</span>
+        </div>
+      </section>
+
+      <p id="hotkey-hint" class="hint">Hotkey: <code>Ctrl+Shift+Space</code></p>
     </main>
 
     <main id="widget" class="widget-root hidden" aria-live="polite">
       <div class="recording-pill" id="recording-pill">
-        <span id="rec-dot" class="rec-dot" aria-hidden="true"></span>
-        <div class="waveform" id="waveform" aria-hidden="true"></div>
-        <span id="status-text">Recording...</span>
+        <button id="cancel-btn" class="widget-btn widget-btn-ghost" type="button" aria-label="Cancel recording">
+          <span aria-hidden="true">x</span>
+        </button>
+
+        <div class="waveform-wrap">
+          <div class="waveform" id="waveform" aria-hidden="true"></div>
+          <span id="status-text" class="status-text">REC</span>
+        </div>
+
+        <button id="stop-btn" class="widget-btn widget-btn-stop" type="button" aria-label="Stop recording">
+          <span class="stop-square" aria-hidden="true"></span>
+        </button>
       </div>
     </main>
   </body>

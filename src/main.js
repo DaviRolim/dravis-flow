@@ -10,17 +10,79 @@ const downloadBtn = document.getElementById("download-btn");
 const progressWrap = document.getElementById("progress-wrap");
 const progressEl = document.getElementById("progress");
 const progressTextEl = document.getElementById("progress-text");
+const modeStatusEl = document.getElementById("mode-status");
+const hotkeyHintEl = document.getElementById("hotkey-hint");
+const modeButtons = Array.from(document.querySelectorAll(".mode-btn"));
 
 const pill = document.getElementById("recording-pill");
-const recDot = document.getElementById("rec-dot");
 const statusText = document.getElementById("status-text");
 const waveformEl = document.getElementById("waveform");
+const stopBtn = document.getElementById("stop-btn");
+const cancelBtn = document.getElementById("cancel-btn");
 
 let bars = [];
+let currentMode = "hold";
+let widgetActionPending = false;
+
+function normalizeMode(mode) {
+  return mode === "toggle" ? "toggle" : "hold";
+}
+
+function applyModeUI(mode, saved = true) {
+  const normalized = normalizeMode(mode);
+  const toggleMessage =
+    normalized === "toggle"
+      ? "Recording mode: Toggle recording. Press hotkey once to start, once to stop."
+      : "Recording mode: Hold to talk. Hold hotkey to record, release to stop.";
+
+  modeStatusEl.textContent = saved ? toggleMessage : "Saving recording mode...";
+  hotkeyHintEl.textContent =
+    normalized === "toggle"
+      ? "Hotkey: Ctrl+Shift+Space (toggle on/off)"
+      : "Hotkey: Ctrl+Shift+Space (hold to record)";
+
+  modeButtons.forEach((button) => {
+    const isActive = button.dataset.mode === normalized;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-checked", String(isActive));
+  });
+}
+
+async function saveMode(nextMode) {
+  const normalized = normalizeMode(nextMode);
+  if (normalized === currentMode) {
+    return;
+  }
+
+  const previousMode = currentMode;
+  currentMode = normalized;
+  applyModeUI(currentMode, false);
+
+  try {
+    await invoke("set_recording_mode", { mode: currentMode });
+    applyModeUI(currentMode, true);
+  } catch (error) {
+    currentMode = previousMode;
+    applyModeUI(currentMode, true);
+    modeStatusEl.textContent = `Could not save mode: ${error}`;
+  }
+}
+
+async function loadConfig() {
+  try {
+    const config = await invoke("get_config");
+    currentMode = normalizeMode(config?.general?.mode || "hold");
+  } catch (error) {
+    currentMode = "hold";
+    modeStatusEl.textContent = `Config load failed: ${error}`;
+  }
+
+  applyModeUI(currentMode, true);
+}
 
 function initBars() {
   waveformEl.innerHTML = "";
-  bars = Array.from({ length: 7 }, () => {
+  bars = Array.from({ length: 11 }, () => {
     const bar = document.createElement("span");
     bar.className = "bar";
     waveformEl.appendChild(bar);
@@ -28,51 +90,84 @@ function initBars() {
   });
 }
 
-function renderLevel(level) {
-  const scaled = Math.max(0.05, Math.min(1, level * 2.4));
-  bars.forEach((bar, i) => {
-    const noise = 0.2 + ((i % 3) * 0.12);
-    const h = 5 + Math.round((scaled + noise) * 14);
-    bar.style.height = `${h}px`;
+function resetBars() {
+  bars.forEach((bar) => {
+    bar.style.height = "6px";
   });
 }
 
-function setWidgetStatus(status, message) {
-  if (status === "recording") {
-    recDot.classList.remove("processing");
-    statusText.textContent = "Recording...";
+function renderLevel(level) {
+  const scaled = Math.max(0.03, Math.min(1, Number(level || 0) * 2.6));
+  bars.forEach((bar, index) => {
+    const phase = Math.sin((index + 1) * 1.1) * 0.14;
+    const noise = (index % 4) * 0.06;
+    const height = 4 + Math.round((scaled + 0.16 + phase + noise) * 18);
+    bar.style.height = `${Math.max(4, height)}px`;
+  });
+}
+
+function setWidgetButtonsEnabled(enabled) {
+  stopBtn.disabled = !enabled;
+  cancelBtn.disabled = !enabled;
+}
+
+function setWidgetStatus(status, message = "") {
+  const nextStatus = status || "idle";
+  pill.classList.remove("processing", "error");
+
+  if (nextStatus === "recording") {
+    statusText.textContent = "REC";
+    setWidgetButtonsEnabled(true);
     pill.classList.add("visible");
-  } else if (status === "processing") {
-    recDot.classList.add("processing");
-    statusText.textContent = "Transcribing...";
-    bars.forEach((bar) => {
-      bar.style.height = "6px";
-    });
-    pill.classList.add("visible");
-  } else if (status === "error") {
-    recDot.classList.add("processing");
-    statusText.textContent = message || "Error";
-    pill.classList.add("visible");
-    setTimeout(() => pill.classList.remove("visible"), 1200);
-  } else {
-    pill.classList.remove("visible");
+    return;
   }
+
+  if (nextStatus === "processing") {
+    statusText.textContent = "PROC";
+    setWidgetButtonsEnabled(false);
+    resetBars();
+    pill.classList.add("processing", "visible");
+    return;
+  }
+
+  if (nextStatus === "error") {
+    console.error("Widget status error:", message || "Recording failed");
+    statusText.textContent = "ERR";
+    setWidgetButtonsEnabled(false);
+    resetBars();
+    pill.classList.add("error", "visible");
+    window.setTimeout(() => {
+      pill.classList.remove("visible", "processing", "error");
+    }, 1200);
+    return;
+  }
+
+  setWidgetButtonsEnabled(false);
+  resetBars();
+  pill.classList.remove("visible", "processing", "error");
 }
 
 async function initSetupView() {
   setupEl.classList.remove("hidden");
   widgetEl.classList.add("hidden");
 
+  await loadConfig();
+
+  modeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      saveMode(button.dataset.mode || "hold");
+    });
+  });
+
   try {
     const model = await invoke("check_model");
     if (model.exists) {
-      setupMessageEl.textContent = "Model ready. You can close this window and use the hotkey.";
+      setupMessageEl.textContent = "Model ready. Close this window and use the hotkey.";
       downloadBtn.classList.add("hidden");
-      return;
+    } else {
+      setupMessageEl.textContent = `Model missing at ${model.path}`;
+      downloadBtn.classList.remove("hidden");
     }
-
-    setupMessageEl.textContent = `Model missing at ${model.path}`;
-    downloadBtn.classList.remove("hidden");
   } catch (error) {
     setupMessageEl.textContent = `Error checking model: ${error}`;
   }
@@ -100,6 +195,23 @@ async function initSetupView() {
   });
 }
 
+async function runWidgetAction(commandName) {
+  if (widgetActionPending) {
+    return;
+  }
+
+  widgetActionPending = true;
+  setWidgetButtonsEnabled(false);
+
+  try {
+    await invoke(commandName);
+  } catch (error) {
+    setWidgetStatus("error", String(error));
+  } finally {
+    widgetActionPending = false;
+  }
+}
+
 async function initWidgetView() {
   setupEl.classList.add("hidden");
   widgetEl.classList.remove("hidden");
@@ -107,17 +219,29 @@ async function initWidgetView() {
   initBars();
   setWidgetStatus("idle");
 
+  stopBtn.addEventListener("click", () => runWidgetAction("stop_recording"));
+  cancelBtn.addEventListener("click", () => runWidgetAction("cancel_recording"));
+
   await listen("audio_level", (event) => {
-    renderLevel(Number(event.payload || 0));
+    renderLevel(event.payload || 0);
   });
 
   await listen("status", (event) => {
     const payload = event.payload || {};
     setWidgetStatus(payload.status || "idle", payload.message || "");
   });
+
+  try {
+    const currentStatus = await invoke("get_status");
+    setWidgetStatus(currentStatus || "idle");
+  } catch (error) {
+    console.error("Failed to sync widget status:", error);
+  }
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  document.body.classList.add(view === "widget" ? "view-widget" : "view-setup");
+
   if (view === "widget") {
     await initWidgetView();
   } else {

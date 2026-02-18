@@ -1,5 +1,5 @@
-use crate::config::AppConfig;
 use crate::config::model_file_path;
+use crate::config::AppConfig;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 pub struct WhisperEngine {
@@ -34,7 +34,15 @@ impl WhisperEngine {
             .to_str()
             .ok_or_else(|| "invalid model path".to_string())?;
 
-        let ctx = WhisperContext::new_with_params(model, WhisperContextParameters::default())
+        let mut ctx_params = WhisperContextParameters::default();
+        #[cfg(target_os = "macos")]
+        {
+            // Work around intermittent Metal backend teardown crashes on Apple Silicon.
+            // CPU mode is slower but significantly more stable for dev/runtime.
+            ctx_params.use_gpu(false);
+        }
+
+        let ctx = WhisperContext::new_with_params(model, ctx_params)
             .map_err(|e| format!("failed to load whisper model: {e}"))?;
 
         let mut state = ctx

@@ -12,8 +12,8 @@
       {
         "label": "main",
         "title": "DraVis Flow",
-        "width": 460,
-        "height": 320,
+        "width": 720,
+        "height": 560,
         "resizable": false,
         "visible": false,
         "center": true
@@ -22,8 +22,8 @@
         "label": "widget",
         "title": "DraVis Flow Recorder",
         "url": "index.html?view=widget",
-        "width": 220,
-        "height": 44,
+        "width": 272,
+        "height": 72,
         "resizable": false,
         "decorations": false,
         "transparent": true,
@@ -34,7 +34,8 @@
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

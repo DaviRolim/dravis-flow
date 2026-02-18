@@ -91,10 +91,12 @@ pub fn load_or_create_config() -> Result<AppConfig, String> {
 pub fn save_config(config: &AppConfig) -> Result<(), String> {
     let cfg_path = config_path();
     if let Some(parent) = cfg_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("failed to create config parent dir: {e}"))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create config parent dir: {e}"))?;
     }
 
-    let text = toml::to_string_pretty(config).map_err(|e| format!("failed serializing config: {e}"))?;
+    let text =
+        toml::to_string_pretty(config).map_err(|e| format!("failed serializing config: {e}"))?;
     let mut file = fs::File::create(&cfg_path)
         .map_err(|e| format!("failed to create config file {}: {e}", cfg_path.display()))?;
     file.write_all(text.as_bytes())
