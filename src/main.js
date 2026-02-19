@@ -1,5 +1,20 @@
-const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
+let invoke;
+let listen;
+
+function getTauriApi() {
+  const tauri = window.__TAURI__;
+
+  const invokeFn =
+    (typeof tauri?.core?.invoke === "function" && tauri.core.invoke) ||
+    (typeof tauri?.tauri?.invoke === "function" && tauri.tauri.invoke);
+  const listenFn = typeof tauri?.event?.listen === "function" ? tauri.event.listen : undefined;
+
+  if (!invokeFn || !listenFn) {
+    return null;
+  }
+
+  return { invoke: invokeFn, listen: listenFn };
+}
 
 const view = new URLSearchParams(window.location.search).get("view") || "main";
 
@@ -383,6 +398,20 @@ async function initWidgetView() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
+  const tauriApi = getTauriApi();
+  if (!tauriApi) {
+    document.body.classList.add("view-setup");
+    setupEl.classList.remove("hidden");
+    widgetEl.classList.add("hidden");
+    setupMessageEl.textContent =
+      "Failed to initialize Tauri runtime API. Restart the app to retry.";
+    modeStatusEl.textContent = "Runtime API unavailable.";
+    hotkeyHintEl.textContent = "Hotkey unavailable until runtime is restored.";
+    downloadBtn.classList.add("hidden");
+    return;
+  }
+
+  ({ invoke, listen } = tauriApi);
   document.body.classList.add(view === "widget" ? "view-widget" : "view-setup");
 
   if (view === "widget") {
