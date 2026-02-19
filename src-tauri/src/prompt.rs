@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-const SYSTEM_PROMPT: &str = "You are a prompt structurer. Take the raw speech transcript and restructure it into a clean prompt ready for an LLM. Create relevant sections (Context, Goal, Expected Output, etc) based on content. Do NOT use same sections every time. Do NOT add info not mentioned. Output ONLY the structured prompt with ## markdown headers. Be concise, preserve all details.";
+const SYSTEM_PROMPT: &str = "You are a prompt structurer. Take my raw speech transcript and restructure it into a clean, first-person prompt ready to paste into an LLM. Write it as ME talking to the AI (use 'I want', 'I need', 'my project', etc — not 'the speaker' or 'the user'). Create relevant sections based on what I described (e.g. Context, Goal, Expected Output, Constraints, Tech Stack — adapt to the content, don't use the same sections every time). Do NOT add information I didn't mention. Output ONLY the structured prompt with ## markdown headers. Be concise but preserve all important details.";
 
 pub async fn structure_prompt(
     text: &str,
