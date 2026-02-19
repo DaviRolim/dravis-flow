@@ -6,7 +6,7 @@ mod injector;
 mod whisper;
 
 use audio::AudioRecorder;
-use config::{load_or_create_config, model_file_path, save_config, AppConfig};
+use config::{load_or_create_config, model_download_url, model_file_path, save_config, AppConfig};
 use serde::Serialize;
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -19,8 +19,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use whisper::WhisperEngine;
 use whisper_rs::WhisperContext;
 
-const MODEL_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
+// MODEL_URL removed — now driven by config::model_download_url()
 const MIN_TRANSCRIBE_SAMPLES: usize = 16_000; // ~1s at 16 kHz
 const MODE_HOLD: &str = "hold";
 const MODE_TOGGLE: &str = "toggle";
@@ -348,7 +347,9 @@ fn check_model(state: State<AppState>) -> Result<ModelStatus, String> {
 
 #[tauri::command]
 async fn download_model(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let model_path = with_state(&state, |inner| Ok(model_file_path(&inner.config)))?;
+    let (model_path, model_name) = with_state(&state, |inner| {
+        Ok((model_file_path(&inner.config), inner.config.model.name.clone()))
+    })?;
 
     if model_path.exists() {
         return Ok(());
@@ -359,11 +360,12 @@ async fn download_model(app: AppHandle, state: State<'_, AppState>) -> Result<()
             .map_err(|e| format!("failed to create model directory {}: {e}", parent.display()))?;
     }
 
+    let url = model_download_url(&model_name);
     let model_path_clone = model_path.clone();
     let app_clone = app.clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
-        let mut response = reqwest::blocking::get(MODEL_URL)
+        let mut response = reqwest::blocking::get(url)
             .map_err(|e| format!("model download request failed: {e}"))?;
 
         if !response.status().is_success() {
@@ -577,6 +579,28 @@ pub fn run() {
 
             if needs_model {
                 show_main_window(app.handle());
+            } else {
+                // Pre-load WhisperContext in background so first recording is instant
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let state = app_handle.state::<AppState>();
+                    let model_path = {
+                        let inner = state.inner_state.lock().ok();
+                        inner.map(|s| model_file_path(&s.config).display().to_string())
+                    };
+                    if let Some(path) = model_path {
+                        eprintln!("startup: pre-loading whisper model from {path}");
+                        match whisper::load_context(&path) {
+                            Ok(ctx) => {
+                                if let Ok(mut lock) = state.whisper_ctx.lock() {
+                                    *lock = Some(SendWhisperCtx(ctx));
+                                    eprintln!("startup: whisper model pre-loaded and cached");
+                                }
+                            }
+                            Err(e) => eprintln!("startup: failed to pre-load model: {e}"),
+                        }
+                    }
+                });
             }
 
             Ok(())
