@@ -350,14 +350,14 @@ body.view-widget {
 .recording-pill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 7px;
+  gap: 10px;
+  padding: 8px 12px;
   border-radius: var(--radius-pill);
   border: 1px solid rgba(180, 79, 255, 0.5);
-  background: rgba(14, 14, 20, 0.92);
+  background: rgba(10, 10, 15, 0.95);
   box-shadow: 0 10px 28px rgba(4, 3, 12, 0.68), 0 0 0 1px rgba(180, 79, 255, 0.16);
   opacity: 0;
-  transform: translateY(8px) scale(0.78);
+  transform: translateY(8px) scale(0.95);
   transition: opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1), transform 0.26s
       cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease, box-shadow 0.2s ease;
   pointer-events: none;
@@ -365,7 +365,7 @@ body.view-widget {
 
 .recording-pill.visible {
   opacity: 1;
-  transform: translateY(0) scale(0.8);
+  transform: translateY(0) scale(1);
   pointer-events: auto;
 }
 
@@ -380,8 +380,8 @@ body.view-widget {
 }
 
 .widget-btn {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   border: 1px solid transparent;
   display: inline-flex;
@@ -408,7 +408,7 @@ body.view-widget {
 .widget-btn-ghost {
   background: linear-gradient(180deg, rgba(37, 36, 52, 0.94), rgba(17, 17, 24, 0.98));
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: 11px;
   border-color: rgba(255, 51, 153, 0.34);
 }
 
@@ -432,8 +432,9 @@ body.view-widget {
 }
 
 .waveform-wrap {
-  min-width: 112px;
+  min-width: 140px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
@@ -441,16 +442,16 @@ body.view-widget {
 .waveform {
   --waveform-level: 0;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
   gap: 2px;
-  height: 44px;
+  height: 36px;
 }
 
 .waveform .bar {
   --bar-energy: 0;
   width: 2.5px;
-  height: 40px;
+  height: 36px;
   background: linear-gradient(
     180deg,
     var(--color-accent-secondary),
@@ -459,8 +460,8 @@ body.view-widget {
   border-radius: var(--radius-pill);
   box-shadow: 0 0 calc(2px + (var(--bar-energy) * 8px))
     rgba(229, 53, 171, calc(0.18 + (var(--waveform-level) * 0.42)));
-  transform: scaleY(0.18);
-  transform-origin: bottom center;
+  transform: scaleY(0.15);
+  transform-origin: center;
   will-change: transform, box-shadow;
 }
 
@@ -476,8 +477,8 @@ body.view-widget {
 }
 
 .stop-square {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 2px;
   background: #fff;
 }

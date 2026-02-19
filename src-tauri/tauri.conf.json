@@ -23,7 +23,7 @@
         "title": "DraVis Flow Recorder",
         "url": "index.html?view=widget",
         "width": 272,
-        "height": 86,
+        "height": 72,
         "resizable": false,
         "decorations": false,
         "transparent": true,
