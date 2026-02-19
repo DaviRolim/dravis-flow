@@ -3,6 +3,10 @@ use cpal::{SampleFormat, Stream};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+/// RMS below this level is considered silence. 0.01 is empirically quiet enough to ignore
+/// breath/room noise while detecting any intentional speech.
+const SILENCE_RMS_THRESHOLD: f32 = 0.01;
+
 /// Wrapper to make cpal::Stream usable inside Mutex<InnerState>.
 /// Safety: Stream is only accessed behind a Mutex, so concurrent use is impossible.
 struct SendStream {
@@ -184,7 +188,7 @@ impl AudioRecorder {
             resample_linear(&recorded, self.sample_rate, 16_000)
         };
 
-        Ok(trim_silence(&resampled, 0.01))
+        Ok(trim_silence(&resampled, SILENCE_RMS_THRESHOLD))
     }
 }
 

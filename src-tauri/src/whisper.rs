@@ -2,6 +2,12 @@ use crate::config::model_file_path;
 use crate::config::AppConfig;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
+/// Sweet spot for M-series chips; higher values cause thread contention without measurable gain.
+const WHISPER_N_THREADS: i32 = 4;
+
+/// Whisper's hard limit is ~890 characters (~224 tokens). 850 leaves margin to avoid mid-word truncation.
+const WHISPER_MAX_PROMPT_CHARS: usize = 850;
+
 pub struct WhisperEngine {
     model_path: std::path::PathBuf,
 }
@@ -47,9 +53,9 @@ fn build_initial_prompt(dictionary_words: &[String]) -> String {
     let prompt = format!("{style} Glossary: {glossary}");
 
     // Whisper hard limit: 224 tokens (~890 chars). Truncate glossary if needed.
-    // Keep a safe margin — cut at 850 chars to avoid mid-word truncation.
-    if prompt.len() > 850 {
-        let available = 850 - style.len() - " Glossary: ".len();
+    // Keep a safe margin — cut at WHISPER_MAX_PROMPT_CHARS to avoid mid-word truncation.
+    if prompt.len() > WHISPER_MAX_PROMPT_CHARS {
+        let available = WHISPER_MAX_PROMPT_CHARS - style.len() - " Glossary: ".len();
         let mut truncated = String::new();
         for word in dictionary_words {
             let next = if truncated.is_empty() {
@@ -83,7 +89,7 @@ pub fn transcribe_with_ctx(
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_translate(false);
     params.set_language(Some(language));
-    params.set_n_threads(4);
+    params.set_n_threads(WHISPER_N_THREADS);
     params.set_initial_prompt(&initial_prompt);
     params.set_suppress_blank(true);
     params.set_suppress_non_speech_tokens(true);

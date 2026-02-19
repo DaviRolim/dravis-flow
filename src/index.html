@@ -10,12 +10,6 @@
   <body class="theme-cyberpunk">
     <main id="setup" class="setup hidden">
       <header class="window-head">
-        <div class="window-lights" aria-hidden="true">
-          <span class="light light-red"></span>
-          <span class="light light-yellow"></span>
-          <span class="light light-green"></span>
-        </div>
-
         <div class="window-title">
           <p class="eyebrow">Voice Console</p>
           <h1>DraVis Flow</h1>
@@ -40,14 +34,14 @@
             <span class="mode-copy">Best quality. Cleans stutters and fillers.</span>
           </button>
         </div>
-        <p id="model-status" class="mode-status">Loading selected model...</p>
+        <p id="model-status" class="mode-status" aria-live="polite">Loading selected model...</p>
       </section>
 
       <section class="panel">
         <h2>Model Status</h2>
-        <p id="setup-message">Checking local model...</p>
+        <p id="setup-message" aria-live="polite">Checking local model...</p>
         <button id="download-btn" class="primary hidden">Download Model</button>
-        <div id="progress-wrap" class="progress-wrap hidden">
+        <div id="progress-wrap" class="progress-wrap hidden" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div class="progress-track">
             <div id="progress" class="progress-bar"></div>
           </div>
@@ -60,6 +54,7 @@
         <p class="panel-copy">Words Whisper should recognize. Tech terms, names, jargon.</p>
         <div id="vocab-list" class="tag-list"></div>
         <div class="tag-input-row">
+          <label for="vocab-input" class="sr-only">Add vocabulary word</label>
           <input id="vocab-input" class="tag-input" type="text" placeholder="Add word…" autocomplete="off" />
           <button id="vocab-add-btn" class="primary" type="button">Add</button>
         </div>
@@ -70,12 +65,16 @@
         <p class="panel-copy">Auto-replace words after transcription.</p>
         <div id="replacements-list" class="replacement-list"></div>
         <div class="replacement-input-row">
+          <label for="replacement-from-input" class="sr-only">Replace this word</label>
           <input id="replacement-from-input" class="tag-input" type="text" placeholder="From…" autocomplete="off" />
           <span class="replacement-input-sep">→</span>
+          <label for="replacement-to-input" class="sr-only">Replace with this word</label>
           <input id="replacement-to-input" class="tag-input" type="text" placeholder="To…" autocomplete="off" />
           <button id="replacement-add-btn" class="primary" type="button">Add</button>
         </div>
       </section>
+
+      <p id="dict-error-msg" role="alert" aria-live="assertive" class="error-toast hidden"></p>
 
       <p id="hotkey-hint" class="hint">Hold <code>Ctrl+Shift+Space</code> to talk · Tap once to toggle on/off</p>
     </main>

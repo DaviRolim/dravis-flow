@@ -1,4 +1,32 @@
+//! Text formatting pipeline for Whisper transcriptions.
+//!
+//! # Public API
+//!
+//! - [`format_text`] — Full cleanup pipeline. Removes fillers, fixes contractions, capitalizes
+//!   sentences, ensures trailing punctuation. Use for most transcriptions.
+//! - [`apply_replacements`] — Post-format whole-word substitution driven by the user's dictionary.
+//!   Run this *after* `format_text` so replacements see the cleaned output.
+//!
+//! # Pipeline order (inside `format_text`)
+//!
+//! 1. `cleanup_false_start` — drop text before a restart marker (`— actually`, `— let me`, etc.)
+//! 2. `remove_fillers` — strip filler words (`um`, `uh`, `you know`, pause-gated `like`)
+//! 3. `collapse_repeated_phrases` — deduplicate consecutive repeated words/short phrases
+//! 4. `remove_stutter_before_contraction` — drop single-letter stutter before its contraction form
+//! 5. `capitalize_i_forms` — uppercase standalone `i` and `i'*` contractions
+//! 6. `fix_contractions` — restore apostrophes in unambiguous contractions (`dont` → `don't`)
+//! 7. `capitalize_sentences` — uppercase first letter after sentence-ending punctuation
+//! 8. `ensure_trailing_punctuation` — append `.` if text doesn't already end with `.`, `!`, or `?`
+//!
+//! # `token_core()` convention
+//!
+//! Many pipeline passes strip leading/trailing non-alphanumeric characters (except `'`) and
+//! lowercase the result before comparison.  This "core" string lets filler detection and
+//! deduplication work correctly on tokens that carry trailing punctuation (e.g. `"like,"`, `"um."`).
+
 use crate::config::ReplacementEntry;
+
+// ── Public API ───────────────────────────────────────────────────────────────
 
 /// Apply dictionary replacements after formatting.
 /// Whole-word, case-insensitive match → replace with exact `to` spelling.
@@ -164,6 +192,8 @@ fn capitalize_sentences(text: &str) -> String {
     result
 }
 
+// ── Pipeline Stages ──────────────────────────────────────────────────────────
+
 fn smart_cleanup(input: &str) -> String {
     let mut text = collapse_whitespace(input.trim());
     text = cleanup_false_start(&text);
@@ -183,6 +213,8 @@ fn tokenize(text: &str) -> Vec<String> {
 fn collapse_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
+
+// ── Cleanup Sub-passes ───────────────────────────────────────────────────────
 
 fn cleanup_false_start(input: &str) -> String {
     for marker in ["—", "–", "--"] {
@@ -341,6 +373,8 @@ fn remove_stutter_before_contraction(tokens: Vec<String>) -> Vec<String> {
 
     out
 }
+
+// ── Token Utilities ──────────────────────────────────────────────────────────
 
 fn token_core(token: &str) -> String {
     token

@@ -4,6 +4,15 @@ use std::{thread, time::Duration};
 #[cfg(not(target_os = "macos"))]
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
+/// Time for the macOS pasteboard to sync the new contents across processes before issuing Cmd+V.
+const CLIPBOARD_SYNC_DELAY_MS: u64 = 50;
+
+/// Time for the target app to read the clipboard and process the paste before we restore prior contents.
+const PASTE_SETTLE_DELAY_MS: u64 = 100;
+
+/// Gap between CGEvent key-down and key-up for the synthetic Cmd+V keystroke.
+const KEY_EVENT_DELAY_MS: u64 = 10;
+
 fn dlog_msg(msg: &str) {
     eprintln!("{msg}");
     crate::write_log(msg);
@@ -93,7 +102,7 @@ pub fn paste_text(text: &str) -> Result<(), String> {
     dlog_msg("injector: clipboard set OK");
 
     // Give the pasteboard time to sync across processes
-    thread::sleep(Duration::from_millis(50));
+    thread::sleep(Duration::from_millis(CLIPBOARD_SYNC_DELAY_MS));
     dlog_msg("injector: triggering paste keystroke");
 
     #[cfg(target_os = "macos")]
@@ -121,7 +130,7 @@ pub fn paste_text(text: &str) -> Result<(), String> {
     }
 
     // Wait for the target app to read the clipboard before restoring
-    thread::sleep(Duration::from_millis(100));
+    thread::sleep(Duration::from_millis(PASTE_SETTLE_DELAY_MS));
 
     if let Some(previous_text) = previous {
         let _ = clipboard.set_text(previous_text);
@@ -168,7 +177,7 @@ fn paste_cmd_v_cgevent() -> Result<(), String> {
 
     dlog_msg("injector: posting CGEvent key-down (Cmd+V)");
     key_down.post(core_graphics::event::CGEventTapLocation::HID);
-    thread::sleep(Duration::from_millis(10));
+    thread::sleep(Duration::from_millis(KEY_EVENT_DELAY_MS));
     dlog_msg("injector: posting CGEvent key-up");
     key_up.post(core_graphics::event::CGEventTapLocation::HID);
 

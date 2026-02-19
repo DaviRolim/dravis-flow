@@ -20,6 +20,7 @@
   --color-text-dim: #c2bdd5;
   --color-status-accent: #f4a6d8;
 
+  --color-border-panel: rgba(255, 51, 153, 0.2);
   --color-border-default: rgba(255, 51, 153, 0.24);
   --color-border-active: rgba(180, 79, 255, 0.78);
   --color-border-glow: rgba(229, 53, 171, 0.44);
@@ -131,6 +132,19 @@ body.view-widget::after {
   display: none !important;
 }
 
+/* Visually hide content that should remain accessible to screen readers */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .setup {
   width: min(920px, 100%);
   min-height: 100vh;
@@ -149,33 +163,6 @@ body.view-widget::after {
   display: grid;
   gap: var(--spacing-xs);
   margin-bottom: var(--spacing-md);
-}
-
-.window-lights {
-  display: none;
-}
-
-.light {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  box-shadow: 0 0 8px currentColor;
-}
-
-.light-red {
-  color: #ff3399;
-  background: #ff3399;
-}
-
-.light-yellow {
-  color: var(--color-accent-primary);
-  background: var(--color-accent-primary);
-}
-
-.light-green {
-  color: var(--color-accent-tertiary);
-  background: var(--color-accent-tertiary);
-  opacity: 0.65;
 }
 
 .window-title h1 {
@@ -203,7 +190,7 @@ body.view-widget::after {
 
 /* === CONFIG PANEL === */
 .panel {
-  border: 1px solid rgba(255, 51, 153, 0.2);
+  border: 1px solid var(--color-border-panel);
   border-radius: var(--radius-md);
   background: rgba(17, 17, 24, 0.9);
   padding: var(--spacing-sm) var(--spacing-md);
@@ -238,7 +225,7 @@ body.view-widget::after {
   width: 100%;
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(255, 51, 153, 0.2);
+  border: 1px solid var(--color-border-panel);
   background: var(--color-option-bg);
   border-radius: var(--radius-md);
   padding: 9px 42px 9px 12px;
@@ -670,7 +657,7 @@ body.view-widget::after {
   min-width: 0;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(255, 51, 153, 0.2);
+  border: 1px solid var(--color-border-panel);
   background: rgba(10, 10, 15, 0.9);
   color: var(--color-text-primary);
   font-family: var(--font-body);
@@ -740,6 +727,18 @@ body.view-widget::after {
   opacity: 0.7;
   font-size: 0.9rem;
   flex-shrink: 0;
+}
+
+/* === ERROR TOAST === */
+.error-toast {
+  margin: var(--spacing-sm) 2px 0;
+  padding: 7px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 90, 134, 0.4);
+  background: rgba(255, 90, 134, 0.1);
+  color: var(--color-danger);
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 /* === RESPONSIVE === */
