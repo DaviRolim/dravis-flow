@@ -293,7 +293,7 @@ async function togglePromptMode(invoke, promptModeBtn) {
       enabled: promptModeConfig.enabled,
       provider: promptModeConfig.provider,
       model: promptModeConfig.model,
-      api_key: promptModeConfig.api_key,
+      apiKey: promptModeConfig.api_key,
     });
     promptModeConfig = normalizePromptModeConfig(updatedConfig?.prompt_mode);
     setPromptModeButtonState(promptModeBtn, promptModeConfig.enabled);

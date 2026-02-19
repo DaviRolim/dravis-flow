@@ -221,7 +221,7 @@ async function savePromptMode(invokeFn) {
     enabled: promptModeConfig.enabled,
     provider: promptModeConfig.provider,
     model: promptModeConfig.model,
-    api_key: promptModeConfig.api_key,
+    apiKey: promptModeConfig.api_key,
   });
 
   promptModeConfig = normalizePromptModeConfig(config?.prompt_mode || promptModeConfig);
