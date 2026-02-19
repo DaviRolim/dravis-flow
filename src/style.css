@@ -406,22 +406,20 @@ body.view-widget {
 }
 
 .widget-btn-ghost {
-  background: linear-gradient(180deg, rgba(37, 36, 52, 0.94), rgba(17, 17, 24, 0.98));
+  background: rgba(26, 26, 36, 0.9);
   color: var(--color-text-secondary);
   font-size: 11px;
-  border-color: rgba(255, 51, 153, 0.34);
+  border-color: rgba(180, 79, 255, 0.2);
 }
 
 .widget-btn-ghost:hover:enabled {
-  border-color: rgba(255, 45, 149, 0.62);
-  box-shadow: 0 0 10px rgba(255, 45, 149, 0.16);
+  border-color: rgba(180, 79, 255, 0.4);
 }
 
 .widget-btn-stop {
-  background: linear-gradient(180deg, rgba(255, 45, 149, 0.2), rgba(17, 17, 24, 0.95));
+  background: rgba(26, 26, 36, 0.9);
   color: var(--color-text-primary);
-  border-color: rgba(255, 45, 149, 0.76);
-  box-shadow: 0 0 10px rgba(229, 53, 171, 0.22);
+  border-color: rgba(255, 45, 149, 0.4);
   animation: pulse-stop 1.8s ease-in-out infinite;
 }
 

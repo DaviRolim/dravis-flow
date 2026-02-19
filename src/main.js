@@ -219,8 +219,8 @@ function animateWaveform(timestamp) {
       const dynamicLift = normalizedLevel * (0.14 + weight * 0.94);
       lift = dynamicLift + ambientLift * (normalizedLevel < 0.04 ? 0.8 : 0.32);
     } else if (waveformState === "processing") {
-      const processingWave = Math.sin(seconds * 0.92 - index * 0.42) * 0.5 + 0.5;
-      lift = (0.19 + processingWave * 0.33) * (0.34 + weight * 0.82) + ambientLift * 0.48;
+      // Fade to minimum — no wave animation during processing
+      lift = 0;
     } else {
       lift = ambientLift * 0.6;
     }
@@ -280,7 +280,13 @@ function setWidgetStatus(status, message = "") {
     pendingLevel = 0;
     setWidgetButtonsEnabled(false);
     pill.classList.add("processing", "visible");
-    startWaveformAnimation();
+    // Bars fade down naturally via the animation loop (inputTarget becomes 0)
+    // No need to keep animating — stop after a short fade
+    window.setTimeout(() => {
+      if (waveformState === "processing") {
+        stopWaveformAnimation();
+      }
+    }, 600);
     return;
   }
 
