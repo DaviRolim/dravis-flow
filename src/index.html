@@ -55,6 +55,28 @@
         </div>
       </section>
 
+      <section class="panel">
+        <h2>Vocabulary</h2>
+        <p class="panel-copy">Words Whisper should recognize. Tech terms, names, jargon.</p>
+        <div id="vocab-list" class="tag-list"></div>
+        <div class="tag-input-row">
+          <input id="vocab-input" class="tag-input" type="text" placeholder="Add word…" autocomplete="off" />
+          <button id="vocab-add-btn" class="primary" type="button">Add</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Replacements</h2>
+        <p class="panel-copy">Auto-replace words after transcription.</p>
+        <div id="replacements-list" class="replacement-list"></div>
+        <div class="replacement-input-row">
+          <input id="replacement-from-input" class="tag-input" type="text" placeholder="From…" autocomplete="off" />
+          <span class="replacement-input-sep">→</span>
+          <input id="replacement-to-input" class="tag-input" type="text" placeholder="To…" autocomplete="off" />
+          <button id="replacement-add-btn" class="primary" type="button">Add</button>
+        </div>
+      </section>
+
       <p id="hotkey-hint" class="hint">Hold <code>Ctrl+Shift+Space</code> to talk · Tap once to toggle on/off</p>
     </main>
 

@@ -467,6 +467,27 @@ fn check_model(state: State<AppState>) -> Result<ModelStatus, String> {
     })
 }
 
+#[tauri::command]
+fn set_dictionary_words(state: State<AppState>, words: Vec<String>) -> Result<AppConfig, String> {
+    with_state(&state, |inner| {
+        inner.config.dictionary.words = words;
+        save_config(&inner.config)?;
+        Ok(inner.config.clone())
+    })
+}
+
+#[tauri::command]
+fn set_dictionary_replacements(
+    state: State<AppState>,
+    replacements: Vec<config::ReplacementEntry>,
+) -> Result<AppConfig, String> {
+    with_state(&state, |inner| {
+        inner.config.dictionary.replacements = replacements;
+        save_config(&inner.config)?;
+        Ok(inner.config.clone())
+    })
+}
+
 async fn run_model_download(
     app: AppHandle,
     model_path: std::path::PathBuf,
@@ -722,7 +743,9 @@ pub fn run() {
             set_recording_mode,
             set_model,
             check_model,
-            download_model
+            download_model,
+            set_dictionary_words,
+            set_dictionary_replacements
         ])
         .setup(move |app| {
             init_logging();

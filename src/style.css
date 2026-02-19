@@ -614,6 +614,134 @@ body.view-widget::after {
   }
 }
 
+/* === DICTIONARY PANELS === */
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  min-height: 4px;
+  margin-bottom: var(--spacing-sm);
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(180, 79, 255, 0.3);
+  background: rgba(26, 10, 46, 0.7);
+  color: var(--color-text-secondary);
+  font-family: var(--font-code);
+  font-size: 0.74rem;
+  line-height: 1;
+}
+
+.tag-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  transition: color 0.14s ease, background 0.14s ease;
+}
+
+.tag-chip-remove:hover {
+  color: var(--color-danger);
+  background: rgba(255, 90, 134, 0.15);
+}
+
+.tag-input-row {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+}
+
+.tag-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 51, 153, 0.2);
+  background: rgba(10, 10, 15, 0.9);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-size: 0.84rem;
+  outline: none;
+  transition: border-color 0.18s ease;
+}
+
+.tag-input:focus {
+  border-color: rgba(180, 79, 255, 0.6);
+}
+
+.tag-input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.7;
+}
+
+.replacement-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-height: 4px;
+  margin-bottom: var(--spacing-sm);
+}
+
+.replacement-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(180, 79, 255, 0.2);
+  background: rgba(26, 10, 46, 0.5);
+  font-size: 0.82rem;
+}
+
+.replacement-from {
+  color: var(--color-text-secondary);
+  font-family: var(--font-code);
+}
+
+.replacement-arrow-sep {
+  color: var(--color-accent-primary);
+  opacity: 0.7;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.replacement-to {
+  color: var(--color-accent-tertiary);
+  font-family: var(--font-code);
+  flex: 1;
+}
+
+.replacement-row .tag-chip-remove {
+  margin-left: auto;
+}
+
+.replacement-input-row {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+}
+
+.replacement-input-sep {
+  color: var(--color-accent-primary);
+  opacity: 0.7;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
 /* === RESPONSIVE === */
 @media (max-width: 560px) {
   .setup {

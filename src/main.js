@@ -73,6 +73,110 @@ const MODEL_LABELS = {
 let currentModel = "base.en";
 const modelButtons = Array.from(document.querySelectorAll("#model-switch .mode-btn"));
 
+let vocabWords = [];
+let vocabReplacements = [];
+
+const vocabListEl = document.getElementById("vocab-list");
+const vocabInputEl = document.getElementById("vocab-input");
+const vocabAddBtnEl = document.getElementById("vocab-add-btn");
+const replacementsListEl = document.getElementById("replacements-list");
+const replacementFromEl = document.getElementById("replacement-from-input");
+const replacementToEl = document.getElementById("replacement-to-input");
+const replacementAddBtnEl = document.getElementById("replacement-add-btn");
+
+function renderVocabList() {
+  if (!vocabListEl) return;
+  vocabListEl.innerHTML = "";
+  vocabWords.forEach((word, index) => {
+    const chip = document.createElement("span");
+    chip.className = "tag-chip";
+    const text = document.createTextNode(word);
+    chip.appendChild(text);
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "tag-chip-remove";
+    removeBtn.type = "button";
+    removeBtn.setAttribute("aria-label", `Remove ${word}`);
+    removeBtn.innerHTML = "&times;";
+    removeBtn.addEventListener("click", () => removeVocabWord(index));
+    chip.appendChild(removeBtn);
+    vocabListEl.appendChild(chip);
+  });
+}
+
+function renderReplacementsList() {
+  if (!replacementsListEl) return;
+  replacementsListEl.innerHTML = "";
+  vocabReplacements.forEach((entry, index) => {
+    const row = document.createElement("div");
+    row.className = "replacement-row";
+    const fromSpan = document.createElement("span");
+    fromSpan.className = "replacement-from";
+    fromSpan.textContent = entry.from;
+    const arrowSpan = document.createElement("span");
+    arrowSpan.className = "replacement-arrow-sep";
+    arrowSpan.textContent = "→";
+    const toSpan = document.createElement("span");
+    toSpan.className = "replacement-to";
+    toSpan.textContent = entry.to;
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "tag-chip-remove";
+    removeBtn.type = "button";
+    removeBtn.setAttribute("aria-label", `Remove replacement ${entry.from}`);
+    removeBtn.innerHTML = "&times;";
+    removeBtn.addEventListener("click", () => removeReplacement(index));
+    row.appendChild(fromSpan);
+    row.appendChild(arrowSpan);
+    row.appendChild(toSpan);
+    row.appendChild(removeBtn);
+    replacementsListEl.appendChild(row);
+  });
+}
+
+async function removeVocabWord(index) {
+  vocabWords = vocabWords.filter((_, i) => i !== index);
+  renderVocabList();
+  try {
+    await invoke("set_dictionary_words", { words: vocabWords });
+  } catch (error) {
+    console.error("Failed to save vocabulary:", error);
+  }
+}
+
+async function addVocabWord(word) {
+  const trimmed = word.trim();
+  if (!trimmed || vocabWords.includes(trimmed)) return;
+  vocabWords = [...vocabWords, trimmed];
+  renderVocabList();
+  try {
+    await invoke("set_dictionary_words", { words: vocabWords });
+  } catch (error) {
+    console.error("Failed to save vocabulary:", error);
+  }
+}
+
+async function removeReplacement(index) {
+  vocabReplacements = vocabReplacements.filter((_, i) => i !== index);
+  renderReplacementsList();
+  try {
+    await invoke("set_dictionary_replacements", { replacements: vocabReplacements });
+  } catch (error) {
+    console.error("Failed to save replacements:", error);
+  }
+}
+
+async function addReplacement(from, to) {
+  const fromTrimmed = from.trim();
+  const toTrimmed = to.trim();
+  if (!fromTrimmed || !toTrimmed) return;
+  vocabReplacements = [...vocabReplacements, { from: fromTrimmed, to: toTrimmed }];
+  renderReplacementsList();
+  try {
+    await invoke("set_dictionary_replacements", { replacements: vocabReplacements });
+  } catch (error) {
+    console.error("Failed to save replacements:", error);
+  }
+}
+
 function applyModelUI(modelName, confirmed) {
   modelButtons.forEach((btn) => {
     const isActive = btn.dataset.model === modelName;
@@ -116,11 +220,15 @@ async function loadConfig() {
   try {
     const config = await invoke("get_config");
     currentModel = config?.model?.name || "base.en";
+    vocabWords = config?.dictionary?.words || [];
+    vocabReplacements = config?.dictionary?.replacements || [];
   } catch (error) {
     // ignore — applyModelUI will use the default
   }
 
   applyModelUI(currentModel, true);
+  renderVocabList();
+  renderReplacementsList();
 }
 
 function initBars() {
@@ -329,6 +437,34 @@ async function initSetupView() {
       saveModel(button.dataset.model || "base.en");
     });
   });
+
+  if (vocabAddBtnEl && vocabInputEl) {
+    vocabAddBtnEl.addEventListener("click", () => {
+      addVocabWord(vocabInputEl.value);
+      vocabInputEl.value = "";
+    });
+    vocabInputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        addVocabWord(vocabInputEl.value);
+        vocabInputEl.value = "";
+      }
+    });
+  }
+
+  if (replacementAddBtnEl && replacementFromEl && replacementToEl) {
+    replacementAddBtnEl.addEventListener("click", () => {
+      addReplacement(replacementFromEl.value, replacementToEl.value);
+      replacementFromEl.value = "";
+      replacementToEl.value = "";
+    });
+    replacementToEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        addReplacement(replacementFromEl.value, replacementToEl.value);
+        replacementFromEl.value = "";
+        replacementToEl.value = "";
+      }
+    });
+  }
 
   if (modelResult && modelResult.error) {
     setupMessageEl.textContent = `Error checking model: ${modelResult.error}`;
