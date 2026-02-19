@@ -22,8 +22,23 @@ const cancelBtn = document.getElementById("cancel-btn");
 let bars = [];
 let currentMode = "hold";
 let widgetActionPending = false;
+let waveformState = "idle";
+const BAR_COUNT = 26;
 const BAR_MIN_SCALE = 0.18;
 const BAR_MAX_SCALE = 1.34;
+const BAR_VARIATION_RANGE = 0.18;
+const BAR_VARIATION_RETARGET_MIN_MS = 80;
+const BAR_VARIATION_RETARGET_MAX_MS = 220;
+const BAR_GAUSSIAN_SIGMA = 0.38;
+const BAR_AMBIENT_BREATH = 0.038;
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
 
 function normalizeMode(mode) {
   return mode === "toggle" ? "toggle" : "hold";
@@ -69,10 +84,19 @@ async function saveMode(nextMode) {
   }
 }
 
+const MODEL_SIZES = {
+  "base.en": "142 MB",
+  "small.en": "466 MB",
+  "large-v3-turbo": "809 MB",
+};
+
 async function loadConfig() {
   try {
     const config = await invoke("get_config");
     currentMode = normalizeMode(config?.general?.mode || "hold");
+    const modelName = config?.model?.name || "base.en";
+    const size = MODEL_SIZES[modelName] || "";
+    downloadBtn.textContent = size ? `Download Model (${size})` : "Download Model";
   } catch (error) {
     currentMode = "hold";
     modeStatusEl.textContent = `Config load failed: ${error}`;
@@ -83,56 +107,120 @@ async function loadConfig() {
 
 function initBars() {
   waveformEl.innerHTML = "";
-  bars = Array.from({ length: 11 }, () => {
+  bars = Array.from({ length: BAR_COUNT }, () => {
     const bar = document.createElement("span");
     bar.className = "bar";
     waveformEl.appendChild(bar);
     return bar;
   });
+
+  const midpoint = (bars.length - 1) / 2 || 1;
+  barWeights = bars.map((_, index) => {
+    const normalizedOffset = (index - midpoint) / midpoint;
+    const gaussian = Math.exp(
+      -(normalizedOffset * normalizedOffset) / (2 * BAR_GAUSSIAN_SIGMA * BAR_GAUSSIAN_SIGMA),
+    );
+    return 0.18 + gaussian * 0.82;
+  });
+  barResponseRates = bars.map(() => randomBetween(0.3, 0.4));
+  barPhaseOffsets = bars.map((_, index) => index * 0.24 + randomBetween(-0.2, 0.2));
+  barVariationTargets = bars.map(() => 1);
+  barVariations = bars.map(() => 1);
+  barVariationTimers = bars.map(() => randomBetween(0, BAR_VARIATION_RETARGET_MAX_MS));
   barScales = Array.from({ length: bars.length }, () => BAR_MIN_SCALE);
+  bars.forEach((bar) => {
+    bar.style.setProperty("--bar-energy", "0");
+    bar.style.transform = `scaleY(${BAR_MIN_SCALE})`;
+  });
 }
 
 function resetBars() {
   pendingLevel = 0;
   smoothedLevel = 0;
+  lastWaveformTimestamp = 0;
+  waveformEl.style.setProperty("--waveform-level", "0");
   bars.forEach((bar, index) => {
     barScales[index] = BAR_MIN_SCALE;
     bar.style.transform = `scaleY(${BAR_MIN_SCALE})`;
+    bar.style.setProperty("--bar-energy", "0");
   });
 }
 
 let pendingLevel = 0;
 let smoothedLevel = 0;
 let barScales = [];
+let barWeights = [];
+let barResponseRates = [];
+let barPhaseOffsets = [];
+let barVariations = [];
+let barVariationTargets = [];
+let barVariationTimers = [];
 let waveformAnimationFrame = 0;
+let lastWaveformTimestamp = 0;
 
 function renderLevel(level) {
-  pendingLevel = Math.max(0, Math.min(1, Number(level || 0)));
+  pendingLevel = clamp(Number(level || 0), 0, 1);
 }
 
 function animateWaveform(timestamp) {
-  smoothedLevel += (pendingLevel - smoothedLevel) * 0.18;
-  const energy = Math.max(0.04, Math.min(1, smoothedLevel * 2.9));
-  const curvedEnergy = 1 - (1 - energy) * (1 - energy);
-  const midpoint = (bars.length - 1) / 2 || 1;
+  const deltaMs = lastWaveformTimestamp ? Math.min(80, timestamp - lastWaveformTimestamp) : 16;
+  lastWaveformTimestamp = timestamp;
+  const seconds = timestamp * 0.001;
+
+  const inputTarget = waveformState === "recording" ? pendingLevel : 0;
+  smoothedLevel += (inputTarget - smoothedLevel) * 0.34;
+  const normalizedLevel = clamp(smoothedLevel, 0, 1);
+
+  const glowLevel =
+    waveformState === "recording"
+      ? normalizedLevel
+      : waveformState === "processing"
+        ? 0.22 + Math.sin(seconds * 0.9) * 0.06
+        : 0.08;
+  waveformEl.style.setProperty("--waveform-level", String(clamp(glowLevel, 0, 1)));
 
   bars.forEach((bar, index) => {
-    const distance = Math.abs(index - midpoint) / midpoint;
-    const arch = Math.cos(distance * Math.PI * 0.5);
-    const inCurve = Math.sin(timestamp * 0.012 + index * 0.62) * 0.13;
-    const outCurve = Math.sin(timestamp * 0.018 - distance * 3.1) * 0.09;
-    const sway = Math.sin(timestamp * 0.006 + index * 0.41) * 0.05;
-    const base = BAR_MIN_SCALE + arch * 0.24;
-    const lift = curvedEnergy * (0.42 + arch * 0.62);
-    const targetScale = Math.max(
-      BAR_MIN_SCALE,
-      Math.min(BAR_MAX_SCALE, base + lift + inCurve + outCurve + sway),
-    );
+    barVariationTimers[index] -= deltaMs;
+    if (barVariationTimers[index] <= 0) {
+      barVariationTargets[index] = 1 + randomBetween(-BAR_VARIATION_RANGE, BAR_VARIATION_RANGE);
+      barVariationTimers[index] = randomBetween(
+        BAR_VARIATION_RETARGET_MIN_MS,
+        BAR_VARIATION_RETARGET_MAX_MS,
+      );
+    }
+
+    const currentVariation = barVariations[index] ?? 1;
+    const targetVariation = barVariationTargets[index] ?? 1;
+    const nextVariation = currentVariation + (targetVariation - currentVariation) * 0.22;
+    barVariations[index] = nextVariation;
+
+    const weight = barWeights[index] ?? 0.2;
+    const phase = barPhaseOffsets[index] ?? 0;
+    const ambientWave = Math.sin(seconds * 1.7 + phase) * 0.5 + 0.5;
+    const ambientLift = ambientWave * BAR_AMBIENT_BREATH * weight;
+
+    let lift = 0;
+    if (waveformState === "recording") {
+      const dynamicLift = normalizedLevel * (0.14 + weight * 0.94);
+      lift = dynamicLift + ambientLift * (normalizedLevel < 0.04 ? 0.8 : 0.32);
+    } else if (waveformState === "processing") {
+      const processingWave = Math.sin(seconds * 0.92 - index * 0.42) * 0.5 + 0.5;
+      lift = (0.19 + processingWave * 0.33) * (0.34 + weight * 0.82) + ambientLift * 0.48;
+    } else {
+      lift = ambientLift * 0.6;
+    }
+
+    const variedLift = lift * nextVariation;
+    const targetScale = clamp(BAR_MIN_SCALE + variedLift, BAR_MIN_SCALE, BAR_MAX_SCALE);
     const previousScale = barScales[index] ?? BAR_MIN_SCALE;
-    const nextScale = previousScale + (targetScale - previousScale) * 0.34;
+    const responseRate = barResponseRates[index] ?? 0.34;
+    const nextScale = previousScale + (targetScale - previousScale) * responseRate;
 
     barScales[index] = nextScale;
-    bar.style.transform = `scaleY(${nextScale})`;
+    bar.style.transform = `scaleY(${nextScale.toFixed(4)})`;
+
+    const barEnergy = clamp((nextScale - BAR_MIN_SCALE) / (BAR_MAX_SCALE - BAR_MIN_SCALE), 0, 1);
+    bar.style.setProperty("--bar-energy", barEnergy.toFixed(3));
   });
 
   waveformAnimationFrame = window.requestAnimationFrame(animateWaveform);
@@ -142,6 +230,7 @@ function startWaveformAnimation() {
   if (waveformAnimationFrame) {
     return;
   }
+  lastWaveformTimestamp = 0;
   waveformAnimationFrame = window.requestAnimationFrame(animateWaveform);
 }
 
@@ -151,6 +240,7 @@ function stopWaveformAnimation() {
   }
   window.cancelAnimationFrame(waveformAnimationFrame);
   waveformAnimationFrame = 0;
+  lastWaveformTimestamp = 0;
 }
 
 function setWidgetButtonsEnabled(enabled) {
@@ -163,6 +253,7 @@ function setWidgetStatus(status, message = "") {
   pill.classList.remove("processing", "error");
 
   if (nextStatus === "recording") {
+    waveformState = "recording";
     setWidgetButtonsEnabled(true);
     pill.classList.add("visible");
     startWaveformAnimation();
@@ -170,15 +261,17 @@ function setWidgetStatus(status, message = "") {
   }
 
   if (nextStatus === "processing") {
+    waveformState = "processing";
+    pendingLevel = 0;
     setWidgetButtonsEnabled(false);
-    stopWaveformAnimation();
-    resetBars();
     pill.classList.add("processing", "visible");
+    startWaveformAnimation();
     return;
   }
 
   if (nextStatus === "error") {
     console.error("Widget status error:", message || "Recording failed");
+    waveformState = "idle";
     setWidgetButtonsEnabled(false);
     stopWaveformAnimation();
     resetBars();
@@ -189,6 +282,7 @@ function setWidgetStatus(status, message = "") {
     return;
   }
 
+  waveformState = "idle";
   setWidgetButtonsEnabled(false);
   stopWaveformAnimation();
   resetBars();

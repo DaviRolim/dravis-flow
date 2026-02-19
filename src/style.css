@@ -432,34 +432,42 @@ body.view-widget {
 }
 
 .waveform-wrap {
-  min-width: 148px;
+  min-width: 112px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .waveform {
+  --waveform-level: 0;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  gap: 4px;
+  gap: 2px;
   height: 28px;
 }
 
 .waveform .bar {
-  width: 4px;
+  --bar-energy: 0;
+  width: 2px;
   height: 24px;
-  background: linear-gradient(180deg, #ff00ff, #b44fff);
+  background: linear-gradient(
+    180deg,
+    var(--color-accent-secondary),
+    var(--color-accent-primary)
+  );
   border-radius: var(--radius-pill);
-  box-shadow: 0 0 8px rgba(229, 53, 171, 0.34);
+  box-shadow: 0 0 calc(2px + (var(--bar-energy) * 8px))
+    rgba(229, 53, 171, calc(0.18 + (var(--waveform-level) * 0.42)));
   transform: scaleY(0.18);
-  transform-origin: bottom;
-  transition: transform 0.08s cubic-bezier(0.33, 1, 0.68, 1);
+  transform-origin: bottom center;
+  will-change: transform, box-shadow;
 }
 
 .recording-pill.processing .waveform .bar {
-  background: linear-gradient(180deg, #ff2d95, #e535ab);
-  box-shadow: 0 0 6px rgba(255, 45, 149, 0.42);
+  background: linear-gradient(180deg, var(--color-accent-primary), var(--color-accent-secondary));
+  box-shadow: 0 0 calc(2px + (var(--bar-energy) * 7px))
+    rgba(255, 45, 149, calc(0.14 + (var(--waveform-level) * 0.34)));
 }
 
 .recording-pill.error .waveform .bar {
