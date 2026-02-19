@@ -1,41 +1,126 @@
 pub fn format_text(input: &str) -> String {
     let cleaned = smart_cleanup(input);
-    let mut text = cleaned.trim().replace(" i ", " I ");
+    let text = cleaned.trim();
     if text.is_empty() {
-        return text;
+        return String::new();
     }
 
-    if text == "i" {
-        text = "I".to_string();
-    }
+    // Process word-by-word to handle "I" capitalization correctly
+    let mut result = capitalize_i_forms(text);
 
-    let contractions = [
+    // Fix contractions without apostrophes (case-insensitive)
+    let contraction_fixes: &[(&str, &str)] = &[
         ("dont", "don't"),
         ("cant", "can't"),
         ("wont", "won't"),
-        ("im", "I'm"),
-        ("ive", "I've"),
-        ("id", "I'd"),
-        ("ill", "I'll"),
+        ("didnt", "didn't"),
+        ("doesnt", "doesn't"),
+        ("isnt", "isn't"),
+        ("wasnt", "wasn't"),
+        ("werent", "weren't"),
+        ("wouldnt", "wouldn't"),
+        ("couldnt", "couldn't"),
+        ("shouldnt", "shouldn't"),
+        ("hasnt", "hasn't"),
+        ("havent", "haven't"),
+        ("hadnt", "hadn't"),
+        ("youre", "you're"),
+        ("theyre", "they're"),
+        ("were", "we're"),   // careful — also a real word, handled below
+        ("thats", "that's"),
+        ("whats", "what's"),
+        ("heres", "here's"),
+        ("theres", "there's"),
+        ("lets", "let's"),
     ];
 
-    let mut lowered = text.to_lowercase();
-    for (a, b) in contractions {
-        lowered = lowered.replace(a, b);
+    for (from, to) in contraction_fixes {
+        result = replace_whole_word_ci(&result, from, to);
     }
 
-    let mut chars = lowered.chars();
-    if let Some(first) = chars.next() {
-        text = first.to_uppercase().collect::<String>() + chars.as_str();
-    } else {
-        text = lowered;
+    // Capitalize first letter of each sentence
+    result = capitalize_sentences(&result);
+
+    // Ensure trailing punctuation
+    if !result.ends_with(['.', '!', '?']) {
+        result.push('.');
     }
 
-    if !text.ends_with(['.', '!', '?']) {
-        text.push('.');
+    result
+}
+
+/// Replace "i", "i'm", "i'd", "i'll", "i've", "i'd" with capitalized "I" forms.
+/// Handles: standalone "i", and all "i'" contractions regardless of case.
+fn capitalize_i_forms(text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut out = Vec::with_capacity(words.len());
+
+    for word in words {
+        let lower = word.to_lowercase();
+        let fixed = match lower.trim_end_matches(|c: char| c == ',' || c == '.' || c == '!' || c == '?') {
+            "i" => word.to_lowercase().replacen("i", "I", 1),
+            w if w.starts_with("i'") || w.starts_with("i'") => {
+                // i'm, i'd, i'll, i've, i'd
+                let rest = &lower[1..];
+                format!("I{rest}")
+            }
+            _ => word.to_string(),
+        };
+        // Preserve trailing punctuation from original
+        let trailing: String = word.chars().rev().take_while(|c| matches!(c, ',' | '.' | '!' | '?')).collect();
+        if !trailing.is_empty() && !fixed.ends_with(|c: char| matches!(c, ',' | '.' | '!' | '?')) {
+            out.push(format!("{fixed}{}", trailing.chars().rev().collect::<String>()));
+        } else {
+            out.push(fixed);
+        }
     }
 
-    text
+    out.join(" ")
+}
+
+/// Case-insensitive whole-word replacement.
+fn replace_whole_word_ci(text: &str, from: &str, to: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut out = Vec::with_capacity(words.len());
+
+    for word in &words {
+        let stripped = word.trim_end_matches(|c: char| c == ',' || c == '.' || c == '!' || c == '?');
+        let trailing = &word[stripped.len()..];
+
+        if stripped.eq_ignore_ascii_case(from) {
+            // Don't replace "were" with "we're" — "were" is a real word
+            // Only replace if it's clearly a contraction context
+            if from == "were" {
+                out.push(word.to_string());
+            } else {
+                out.push(format!("{to}{trailing}"));
+            }
+        } else {
+            out.push(word.to_string());
+        }
+    }
+
+    out.join(" ")
+}
+
+/// Capitalize first letter of the string and after sentence-ending punctuation.
+fn capitalize_sentences(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut capitalize_next = true;
+
+    for c in text.chars() {
+        if capitalize_next && c.is_alphabetic() {
+            result.extend(c.to_uppercase());
+            capitalize_next = false;
+        } else {
+            result.push(c);
+            if matches!(c, '.' | '!' | '?') {
+                capitalize_next = true;
+            }
+        }
+    }
+
+    result
 }
 
 fn smart_cleanup(input: &str) -> String {
