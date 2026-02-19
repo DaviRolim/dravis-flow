@@ -1,3 +1,10 @@
+//! Application state types.
+//!
+//! `AppState` is the top-level Tauri-managed state. All mutable fields live in
+//! `InnerState` behind a Mutex, accessed via [`with_state`]. The `WhisperContext`
+//! gets its own Mutex (`SendWhisperCtx`) since transcription is CPU-heavy and
+//! shouldn't block state reads.
+
 use crate::audio::AudioRecorder;
 use crate::config::AppConfig;
 use serde::Serialize;

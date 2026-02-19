@@ -1,3 +1,10 @@
+//! Recording pipeline: start → capture audio → stop → transcribe → format → [structure] → paste.
+//!
+//! This is the core flow. `stop_recording_inner` orchestrates the full chain:
+//! silence trim → Whisper transcription → formatter cleanup → dictionary replacements
+//! → optional Prompt Mode (cloud LLM) → clipboard paste at cursor.
+//! On any Prompt Mode error, falls back to the formatted text (never loses transcription).
+
 use crate::config::model_file_path;
 use crate::state::{with_state, AppState, AppStatus, SendWhisperCtx};
 use crate::{dlog, set_widget_state};

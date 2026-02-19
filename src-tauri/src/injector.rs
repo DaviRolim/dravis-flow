@@ -1,3 +1,9 @@
+//! Text injection via clipboard paste.
+//!
+//! Flow: save current clipboard → set text → simulate Cmd+V (CGEvent API on macOS,
+//! osascript fallback) → restore original clipboard. The widget window has `focus: false`
+//! so it never steals focus from the target application.
+
 use arboard::Clipboard;
 use std::{thread, time::Duration};
 

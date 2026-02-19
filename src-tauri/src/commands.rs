@@ -1,3 +1,8 @@
+//! Tauri command handlers — thin wrappers around pipeline and state functions.
+//!
+//! Each `#[tauri::command]` maps to a frontend `invoke()` call.
+//! **Tauri camelCase rule**: Rust `snake_case` params become `camelCase` in JS.
+
 use crate::config::{
     default_prompt_model, model_file_path, normalized_model_name, normalized_prompt_provider,
     save_config, AppConfig,

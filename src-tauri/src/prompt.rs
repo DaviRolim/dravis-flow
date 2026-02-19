@@ -1,3 +1,10 @@
+//! Cloud LLM prompt structuring.
+//!
+//! Takes raw transcribed speech and sends it to a cloud LLM (Anthropic, OpenAI,
+//! or OpenAI-compatible like OpenRouter) to restructure it into a well-organized
+//! first-person prompt. Entry point: [`structure_prompt`].
+//! Caller should fallback to raw text on any error — never lose the transcription.
+
 use serde_json::{json, Value};
 
 const SYSTEM_PROMPT: &str = "You are a prompt structurer. Take my raw speech transcript and restructure it into a clean, first-person prompt ready to paste into an LLM. Write it as ME talking to the AI (use 'I want', 'I need', 'my project', etc — not 'the speaker' or 'the user'). Create relevant sections based on what I described (e.g. Context, Goal, Expected Output, Constraints, Tech Stack — adapt to the content, don't use the same sections every time). Do NOT add information I didn't mention. Output ONLY the structured prompt with ## markdown headers. Be concise but preserve all important details.";
@@ -203,4 +210,91 @@ fn extract_error_message(body: &str) -> Option<String> {
         return Some(message.to_string());
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn anthropic_single_text_block() {
+        let body = r###"{"content":[{"type":"text","text":"## Context\nUser wants X"}]}"###;
+        let result = extract_anthropic_text(body).unwrap();
+        assert_eq!(result, "## Context\nUser wants X");
+    }
+
+    #[test]
+    fn anthropic_multiple_text_blocks() {
+        let body = r#"{"content":[{"type":"text","text":"Part 1"},{"type":"text","text":"Part 2"}]}"#;
+        let result = extract_anthropic_text(body).unwrap();
+        assert_eq!(result, "Part 1\n\nPart 2");
+    }
+
+    #[test]
+    fn anthropic_empty_content_array() {
+        let body = r#"{"content":[]}"#;
+        assert!(extract_anthropic_text(body).is_err());
+    }
+
+    #[test]
+    fn anthropic_missing_content_key() {
+        let body = r#"{"id":"msg_123"}"#;
+        assert!(extract_anthropic_text(body).is_err());
+    }
+
+    #[test]
+    fn openai_standard_response() {
+        let body = r###"{"choices":[{"message":{"content":"## Goal\nBuild a thing"}}]}"###;
+        let result = extract_openai_text(body).unwrap();
+        assert_eq!(result, "## Goal\nBuild a thing");
+    }
+
+    #[test]
+    fn openai_empty_choices() {
+        let body = r#"{"choices":[]}"#;
+        assert!(extract_openai_text(body).is_err());
+    }
+
+    #[test]
+    fn openai_blank_content() {
+        let body = r#"{"choices":[{"message":{"content":"  "}}]}"#;
+        assert!(extract_openai_text(body).is_err());
+    }
+
+    #[test]
+    fn error_message_object_style() {
+        let body = r#"{"error":{"message":"rate limit exceeded","type":"rate_limit"}}"#;
+        assert_eq!(extract_error_message(body), Some("rate limit exceeded".to_string()));
+    }
+
+    #[test]
+    fn error_message_string_style() {
+        let body = r#"{"error":"something went wrong"}"#;
+        assert_eq!(extract_error_message(body), Some("something went wrong".to_string()));
+    }
+
+    #[test]
+    fn error_message_no_error_key() {
+        let body = r#"{"content":[]}"#;
+        assert_eq!(extract_error_message(body), None);
+    }
+
+    #[test]
+    fn error_message_invalid_json() {
+        assert_eq!(extract_error_message("not json"), None);
+    }
+
+    #[tokio::test]
+    async fn empty_text_returns_error() {
+        let result = structure_prompt("  ", "anthropic", "model", "key").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
+    }
+
+    #[tokio::test]
+    async fn unknown_provider_returns_error() {
+        let result = structure_prompt("hello", "gemini", "model", "key").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unsupported"));
+    }
 }

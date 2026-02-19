@@ -1,3 +1,10 @@
+//! Whisper transcription engine.
+//!
+//! Wraps whisper-rs (whisper.cpp bindings) with Metal GPU acceleration on macOS.
+//! The `WhisperContext` is pre-loaded on startup and cached in `AppState`.
+//! Dictionary words are fed as a glossary in `initial_prompt` — this is style
+//! conditioning (not instruction following), limited to ~224 tokens (~850 chars).
+
 use crate::config::model_file_path;
 use crate::config::AppConfig;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
