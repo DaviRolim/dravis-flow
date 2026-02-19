@@ -23,7 +23,11 @@ pub fn paste_text(text: &str) -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
-        paste_cmd_v_cgevent()?;
+        // Try CGEvent first (fastest, most reliable), fall back to osascript
+        if let Err(e) = paste_cmd_v_cgevent() {
+            eprintln!("injector: CGEvent failed ({e}), falling back to osascript");
+            paste_cmd_v_osascript()?;
+        }
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -49,6 +53,20 @@ pub fn paste_text(text: &str) -> Result<(), String> {
     }
 
     eprintln!("injector: done");
+    Ok(())
+}
+
+/// Fallback: use osascript to send Cmd+V.
+#[cfg(target_os = "macos")]
+fn paste_cmd_v_osascript() -> Result<(), String> {
+    let status = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg("tell application \"System Events\" to keystroke \"v\" using command down")
+        .status()
+        .map_err(|e| format!("failed to run osascript: {e}"))?;
+    if !status.success() {
+        return Err(format!("osascript paste failed with status: {status}"));
+    }
     Ok(())
 }
 

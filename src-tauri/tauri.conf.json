@@ -23,13 +23,14 @@
         "title": "DraVis Flow Recorder",
         "url": "index.html?view=widget",
         "width": 272,
-        "height": 72,
+        "height": 86,
         "resizable": false,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
         "visible": false,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "focus": false
       }
     ],
     "security": {
