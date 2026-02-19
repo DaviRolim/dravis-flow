@@ -42,7 +42,26 @@
       </section>
 
       <section class="panel">
-        <h2>Speech Model</h2>
+        <h2>Whisper Model</h2>
+        <p class="panel-copy">Larger models are more accurate but use more memory.</p>
+        <div id="model-switch" class="mode-switch" role="radiogroup" aria-label="Whisper model">
+          <button class="mode-btn" type="button" data-model="base.en" role="radio">
+            <span class="mode-title">Base — 142 MB</span>
+            <span class="mode-copy">Fast, good for simple dictation.</span>
+          </button>
+          <button class="mode-btn" type="button" data-model="small.en" role="radio">
+            <span class="mode-title">Small — 466 MB</span>
+            <span class="mode-copy">Better accuracy, handles accents.</span>
+          </button>
+          <button class="mode-btn" type="button" data-model="large-v3-turbo" role="radio">
+            <span class="mode-title">Large Turbo — 809 MB</span>
+            <span class="mode-copy">Best quality. Cleans stutters and fillers.</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Model Status</h2>
         <p id="setup-message">Checking local model...</p>
         <button id="download-btn" class="primary hidden">Download Model</button>
         <div id="progress-wrap" class="progress-wrap hidden">

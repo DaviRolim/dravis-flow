@@ -108,13 +108,50 @@ const MODEL_SIZES = {
   "large-v3-turbo": "809 MB",
 };
 
+let currentModel = "base.en";
+const modelButtons = Array.from(document.querySelectorAll("#model-switch .mode-btn"));
+
+function applyModelUI(modelName, confirmed) {
+  modelButtons.forEach((btn) => {
+    const isActive = btn.dataset.model === modelName;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-checked", String(isActive));
+  });
+  const size = MODEL_SIZES[modelName] || "";
+  downloadBtn.textContent = size ? `Download Model (${size})` : "Download Model";
+}
+
+async function saveModel(modelName) {
+  if (modelName === currentModel) return;
+
+  const previous = currentModel;
+  currentModel = modelName;
+  applyModelUI(modelName, false);
+
+  try {
+    const result = await invoke("set_model", { name: modelName });
+    applyModelUI(modelName, true);
+    // Update model status
+    if (result && result.exists) {
+      setupMessageEl.textContent = "Model ready. Close this window and use the hotkey.";
+      downloadBtn.classList.add("hidden");
+    } else {
+      setupMessageEl.textContent = `Model not downloaded yet.`;
+      downloadBtn.classList.remove("hidden");
+    }
+  } catch (error) {
+    currentModel = previous;
+    applyModelUI(previous, true);
+    setupMessageEl.textContent = `Could not switch model: ${error}`;
+  }
+}
+
 async function loadConfig() {
   try {
     const config = await invoke("get_config");
     currentMode = normalizeMode(config?.general?.mode || "hold");
-    const modelName = config?.model?.name || "base.en";
-    const size = MODEL_SIZES[modelName] || "";
-    downloadBtn.textContent = size ? `Download Model (${size})` : "Download Model";
+    currentModel = config?.model?.name || "base.en";
+    applyModelUI(currentModel, true);
   } catch (error) {
     currentMode = "hold";
     modeStatusEl.textContent = `Config load failed: ${error}`;
@@ -329,6 +366,12 @@ async function initSetupView() {
   modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
       saveMode(button.dataset.mode || "hold");
+    });
+  });
+
+  modelButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      saveModel(button.dataset.model || "base.en");
     });
   });
 

@@ -335,6 +335,34 @@ fn set_recording_mode(state: State<AppState>, mode: String) -> Result<AppConfig,
 }
 
 #[tauri::command]
+fn set_model(state: State<AppState>, name: String) -> Result<ModelStatus, String> {
+    use config::{normalized_model_name, model_filename};
+
+    let model_name = normalized_model_name(&name).to_string();
+
+    // Update config and invalidate cached WhisperContext
+    with_state(&state, |inner| {
+        inner.config.model.name = model_name.clone();
+        save_config(&inner.config)?;
+        Ok(())
+    })?;
+
+    // Clear cached context so next transcription loads the new model
+    if let Ok(mut ctx_lock) = state.whisper_ctx.lock() {
+        *ctx_lock = None;
+    }
+
+    // Return model status for the new model
+    with_state(&state, |inner| {
+        let engine = WhisperEngine::new(&inner.config);
+        Ok(ModelStatus {
+            exists: engine.model_exists(),
+            path: engine.model_path().display().to_string(),
+        })
+    })
+}
+
+#[tauri::command]
 fn check_model(state: State<AppState>) -> Result<ModelStatus, String> {
     with_state(&state, |inner| {
         let engine = WhisperEngine::new(&inner.config);
@@ -550,6 +578,7 @@ pub fn run() {
             get_status,
             get_config,
             set_recording_mode,
+            set_model,
             check_model,
             download_model
         ])
