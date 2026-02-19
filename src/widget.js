@@ -15,6 +15,12 @@ const BAR_AMBIENT_BREATH = 0.008;
 const LEVEL_GAIN = 14.0;
 // Exponent < 0.5 is heavy compression — even moderate speech pushes bars high.
 const LEVEL_EXPONENT = 0.45;
+const PROMPT_PROVIDER_ANTHROPIC = "anthropic";
+const PROMPT_PROVIDER_OPENAI = "openai";
+const PROMPT_MODEL_DEFAULTS = {
+  [PROMPT_PROVIDER_ANTHROPIC]: "claude-haiku-4-5",
+  [PROMPT_PROVIDER_OPENAI]: "gpt-4o-mini",
+};
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -22,6 +28,32 @@ function clamp(value, min, max) {
 
 function randomBetween(min, max) {
   return min + Math.random() * (max - min);
+}
+
+function normalizePromptProvider(provider) {
+  return String(provider || "").toLowerCase() === PROMPT_PROVIDER_OPENAI
+    ? PROMPT_PROVIDER_OPENAI
+    : PROMPT_PROVIDER_ANTHROPIC;
+}
+
+function normalizePromptModeConfig(config) {
+  const provider = normalizePromptProvider(config?.provider);
+  const defaultModel = PROMPT_MODEL_DEFAULTS[provider] || PROMPT_MODEL_DEFAULTS[PROMPT_PROVIDER_ANTHROPIC];
+  const model = String(config?.model || "").trim() || defaultModel;
+  return {
+    enabled: Boolean(config?.enabled),
+    provider,
+    model,
+    api_key: String(config?.api_key || ""),
+  };
+}
+
+function setPromptModeButtonState(button, enabled) {
+  if (!button) return;
+  button.classList.toggle("active", enabled);
+  button.innerHTML = enabled ? "&#9889;" : "&#9998;";
+  button.setAttribute("aria-label", enabled ? "Disable Prompt Mode" : "Enable Prompt Mode");
+  button.title = enabled ? "Prompt Mode ON" : "Prompt Mode OFF";
 }
 
 let bars = [];
@@ -33,6 +65,13 @@ let lastWaveformTimestamp = 0;
 let waveformState = "idle";
 let isToggleMode = false;
 let widgetActionPending = false;
+let promptModeActionPending = false;
+let promptModeConfig = {
+  enabled: false,
+  provider: PROMPT_PROVIDER_ANTHROPIC,
+  model: PROMPT_MODEL_DEFAULTS[PROMPT_PROVIDER_ANTHROPIC],
+  api_key: "",
+};
 
 function initBars(waveformEl) {
   waveformEl.innerHTML = "";
@@ -178,7 +217,7 @@ function setWidgetButtonsEnabled(stopBtn, cancelBtn, enabled) {
 
 function setWidgetStatus(pill, waveformEl, stopBtn, cancelBtn, status, message = "") {
   const nextStatus = status || "idle";
-  pill.classList.remove("processing", "error");
+  pill.classList.remove("processing", "structuring", "error");
 
   if (nextStatus === "recording") {
     waveformState = "recording";
@@ -192,12 +231,15 @@ function setWidgetStatus(pill, waveformEl, stopBtn, cancelBtn, status, message =
     return;
   }
 
-  if (nextStatus === "processing") {
+  if (nextStatus === "processing" || nextStatus === "structuring") {
     isToggleMode = false;
     waveformState = "processing";
     pendingLevel = 0;
     setWidgetButtonsEnabled(stopBtn, cancelBtn, false);
     pill.classList.add("processing", "visible");
+    if (nextStatus === "structuring") {
+      pill.classList.add("structuring");
+    }
     startWaveformAnimation(waveformEl);
     return;
   }
@@ -236,6 +278,35 @@ async function runWidgetAction(invoke, pill, waveformEl, stopBtn, cancelBtn, com
   }
 }
 
+async function togglePromptMode(invoke, promptModeBtn) {
+  if (promptModeActionPending || !promptModeBtn) return;
+
+  promptModeActionPending = true;
+  promptModeBtn.disabled = true;
+
+  const previous = { ...promptModeConfig };
+  promptModeConfig.enabled = !promptModeConfig.enabled;
+  setPromptModeButtonState(promptModeBtn, promptModeConfig.enabled);
+
+  try {
+    const updatedConfig = await invoke("set_prompt_mode", {
+      enabled: promptModeConfig.enabled,
+      provider: promptModeConfig.provider,
+      model: promptModeConfig.model,
+      api_key: promptModeConfig.api_key,
+    });
+    promptModeConfig = normalizePromptModeConfig(updatedConfig?.prompt_mode);
+    setPromptModeButtonState(promptModeBtn, promptModeConfig.enabled);
+  } catch (error) {
+    promptModeConfig = previous;
+    setPromptModeButtonState(promptModeBtn, promptModeConfig.enabled);
+    console.error("Failed to toggle Prompt Mode:", error);
+  } finally {
+    promptModeBtn.disabled = false;
+    promptModeActionPending = false;
+  }
+}
+
 export async function initWidgetView(invoke, listen) {
   const setupEl = document.getElementById("setup");
   const widgetEl = document.getElementById("widget");
@@ -243,6 +314,7 @@ export async function initWidgetView(invoke, listen) {
   const waveformEl = document.getElementById("waveform");
   const stopBtn = document.getElementById("stop-btn");
   const cancelBtn = document.getElementById("cancel-btn");
+  const promptModeBtn = document.getElementById("prompt-mode-btn");
 
   setupEl.classList.add("hidden");
   widgetEl.classList.remove("hidden");
@@ -256,6 +328,9 @@ export async function initWidgetView(invoke, listen) {
   cancelBtn.addEventListener("click", () =>
     runWidgetAction(invoke, pill, waveformEl, stopBtn, cancelBtn, "cancel_recording"),
   );
+  if (promptModeBtn) {
+    promptModeBtn.addEventListener("click", () => togglePromptMode(invoke, promptModeBtn));
+  }
 
   await Promise.all([
     listen("audio_level", (event) => {
@@ -277,6 +352,16 @@ export async function initWidgetView(invoke, listen) {
       console.log("Model pre-loaded and ready");
     }),
   ]);
+
+  try {
+    const config = await invoke("get_config");
+    promptModeConfig = normalizePromptModeConfig(config?.prompt_mode);
+    setPromptModeButtonState(promptModeBtn, promptModeConfig.enabled);
+  } catch (error) {
+    console.error("Failed to load Prompt Mode config:", error);
+    promptModeConfig = normalizePromptModeConfig();
+    setPromptModeButtonState(promptModeBtn, promptModeConfig.enabled);
+  }
 
   try {
     const currentStatus = await invoke("get_status");

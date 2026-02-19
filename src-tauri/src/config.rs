@@ -5,6 +5,10 @@ use std::{fs, io::Write, path::PathBuf};
 pub const MODEL_BASE_EN: &str = "base.en";
 pub const MODEL_SMALL_EN: &str = "small.en";
 pub const MODEL_LARGE_V3_TURBO: &str = "large-v3-turbo";
+pub const PROMPT_PROVIDER_ANTHROPIC: &str = "anthropic";
+pub const PROMPT_PROVIDER_OPENAI: &str = "openai";
+pub const PROMPT_MODEL_ANTHROPIC_DEFAULT: &str = "claude-haiku-4-5";
+pub const PROMPT_MODEL_OPENAI_DEFAULT: &str = "gpt-4o-mini";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
@@ -22,6 +26,25 @@ pub struct ModelConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FormattingConfig {
     pub level: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptModeConfig {
+    pub enabled: bool,
+    pub provider: String,
+    pub model: String,
+    pub api_key: String,
+}
+
+impl Default for PromptModeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: PROMPT_PROVIDER_ANTHROPIC.to_string(),
+            model: PROMPT_MODEL_ANTHROPIC_DEFAULT.to_string(),
+            api_key: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -46,6 +69,8 @@ pub struct AppConfig {
     pub model: ModelConfig,
     pub formatting: FormattingConfig,
     #[serde(default)]
+    pub prompt_mode: PromptModeConfig,
+    #[serde(default)]
     pub dictionary: DictionaryConfig,
 }
 
@@ -64,28 +89,78 @@ impl Default for AppConfig {
             formatting: FormattingConfig {
                 level: "basic".to_string(),
             },
+            prompt_mode: PromptModeConfig::default(),
             dictionary: DictionaryConfig {
                 words: vec![
                     // Dev tools & runtimes
-                    "Bun", "Tauri", "Rust", "Cargo", "Svelte", "SvelteKit",
-                    "TypeScript", "JavaScript", "Node.js", "npm", "pnpm",
-                    "React", "Vue", "Next.js", "Vite",
+                    "Bun",
+                    "Tauri",
+                    "Rust",
+                    "Cargo",
+                    "Svelte",
+                    "SvelteKit",
+                    "TypeScript",
+                    "JavaScript",
+                    "Node.js",
+                    "npm",
+                    "pnpm",
+                    "React",
+                    "Vue",
+                    "Next.js",
+                    "Vite",
                     // Languages & frameworks
-                    "Flutter", "Dart", "Clojure", "Python", "Go", "Golang",
+                    "Flutter",
+                    "Dart",
+                    "Clojure",
+                    "Python",
+                    "Go",
+                    "Golang",
                     // AI / ML
-                    "Whisper", "GPT", "Claude", "LLM", "OpenAI", "Anthropic",
-                    "Haiku", "Sonnet", "Opus",
+                    "Whisper",
+                    "GPT",
+                    "Claude",
+                    "LLM",
+                    "OpenAI",
+                    "Anthropic",
+                    "Haiku",
+                    "Sonnet",
+                    "Opus",
                     // Git & DevOps
-                    "Git", "GitHub", "GitLab", "CI/CD", "Docker", "Kubernetes",
+                    "Git",
+                    "GitHub",
+                    "GitLab",
+                    "CI/CD",
+                    "Docker",
+                    "Kubernetes",
                     // Common CLI
-                    "npm install", "bun run", "cargo build", "git push",
-                    "tauri dev", "bun run tauri dev",
+                    "npm install",
+                    "bun run",
+                    "cargo build",
+                    "git push",
+                    "tauri dev",
+                    "bun run tauri dev",
                     // Platforms
-                    "macOS", "Linux", "Ubuntu", "AWS", "Vercel", "Tailscale",
+                    "macOS",
+                    "Linux",
+                    "Ubuntu",
+                    "AWS",
+                    "Vercel",
+                    "Tailscale",
                     // Web
-                    "Tailwind", "CSS", "HTML", "API", "REST", "GraphQL",
-                    "WebSocket", "JSON", "TOML", "YAML",
-                ].into_iter().map(String::from).collect(),
+                    "Tailwind",
+                    "CSS",
+                    "HTML",
+                    "API",
+                    "REST",
+                    "GraphQL",
+                    "WebSocket",
+                    "JSON",
+                    "TOML",
+                    "YAML",
+                ]
+                .into_iter()
+                .map(String::from)
+                .collect(),
                 replacements: vec![],
             },
         }
@@ -138,6 +213,21 @@ pub fn model_download_url(model_name: &str) -> &'static str {
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin"
         }
         _ => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+    }
+}
+
+pub fn normalized_prompt_provider(provider: &str) -> &'static str {
+    if provider.trim().eq_ignore_ascii_case(PROMPT_PROVIDER_OPENAI) {
+        PROMPT_PROVIDER_OPENAI
+    } else {
+        PROMPT_PROVIDER_ANTHROPIC
+    }
+}
+
+pub fn default_prompt_model(provider: &str) -> &'static str {
+    match normalized_prompt_provider(provider) {
+        PROMPT_PROVIDER_OPENAI => PROMPT_MODEL_OPENAI_DEFAULT,
+        _ => PROMPT_MODEL_ANTHROPIC_DEFAULT,
     }
 }
 

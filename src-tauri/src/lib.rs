@@ -6,6 +6,7 @@ mod formatter;
 mod hotkey;
 mod injector;
 mod pipeline;
+mod prompt;
 mod state;
 mod whisper;
 
@@ -84,7 +85,7 @@ pub(crate) fn set_widget_state(app: &AppHandle, status: &str, message: Option<St
 
     if let Some(widget) = app.get_webview_window("widget") {
         match status {
-            "recording" | "processing" | "error" => {
+            "recording" | "processing" | "structuring" | "error" => {
                 let _ = position_widget_window(&widget);
                 let _ = widget.show();
             }
@@ -168,11 +169,9 @@ fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
             hotkey::ShortcutAction::Start => {
                 pipeline::start_recording_inner(app_clone.clone()).await
             }
-            hotkey::ShortcutAction::Stop => {
-                pipeline::stop_recording_inner(app_clone.clone())
-                    .await
-                    .map(|_| ())
-            }
+            hotkey::ShortcutAction::Stop => pipeline::stop_recording_inner(app_clone.clone())
+                .await
+                .map(|_| ()),
             hotkey::ShortcutAction::ToggleActivated => unreachable!(),
         };
 
@@ -217,6 +216,7 @@ pub fn run() {
             get_status,
             get_config,
             set_recording_mode,
+            set_prompt_mode,
             set_model,
             check_model,
             download_model,
@@ -245,9 +245,7 @@ pub fn run() {
                 .map_err(|e| format!("failed to parse shortcut '{shortcut_str}': {e}"))?;
             app.global_shortcut()
                 .register(shortcut)
-                .map_err(|e| {
-                    format!("failed to register global shortcut '{shortcut_str}': {e}")
-                })?;
+                .map_err(|e| format!("failed to register global shortcut '{shortcut_str}': {e}"))?;
 
             if let Some(widget) = app.get_webview_window("widget") {
                 let _ = widget.hide();

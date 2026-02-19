@@ -1,8 +1,11 @@
-use crate::config::{model_file_path, normalized_model_name, save_config, AppConfig};
+use crate::config::{
+    default_prompt_model, model_file_path, normalized_model_name, normalized_prompt_provider,
+    save_config, AppConfig,
+};
 use crate::pipeline::{
     cancel_recording_inner, run_model_download, start_recording_inner, stop_recording_inner,
 };
-use crate::state::{AppState, ModelStatus, with_state};
+use crate::state::{with_state, AppState, ModelStatus};
 use crate::whisper::WhisperEngine;
 use tauri::{AppHandle, State};
 
@@ -39,6 +42,31 @@ pub fn set_recording_mode(state: State<AppState>, mode: String) -> Result<AppCon
     with_state(&state, |inner| {
         inner.config.general.mode = normalized.clone();
         inner.toggle_shortcut_held = false;
+        save_config(&inner.config)?;
+        Ok(inner.config.clone())
+    })
+}
+
+#[tauri::command]
+pub fn set_prompt_mode(
+    state: State<AppState>,
+    enabled: bool,
+    provider: String,
+    model: String,
+    api_key: String,
+) -> Result<AppConfig, String> {
+    let normalized_provider = normalized_prompt_provider(&provider).to_string();
+    let normalized_model = if model.trim().is_empty() {
+        default_prompt_model(&normalized_provider).to_string()
+    } else {
+        model.trim().to_string()
+    };
+
+    with_state(&state, |inner| {
+        inner.config.prompt_mode.enabled = enabled;
+        inner.config.prompt_mode.provider = normalized_provider.clone();
+        inner.config.prompt_mode.model = normalized_model.clone();
+        inner.config.prompt_mode.api_key = api_key.trim().to_string();
         save_config(&inner.config)?;
         Ok(inner.config.clone())
     })
@@ -106,10 +134,7 @@ pub fn set_dictionary_replacements(
 }
 
 #[tauri::command]
-pub async fn download_model(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub async fn download_model(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let (model_path, model_name) = with_state(&state, |inner| {
         Ok((
             model_file_path(&inner.config),

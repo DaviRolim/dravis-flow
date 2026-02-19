@@ -1,7 +1,7 @@
 use crate::config::model_file_path;
-use crate::state::{AppState, AppStatus, SendWhisperCtx, with_state};
+use crate::state::{with_state, AppState, AppStatus, SendWhisperCtx};
 use crate::{dlog, set_widget_state};
-use crate::{formatter, whisper};
+use crate::{formatter, prompt, whisper};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use tauri::{AppHandle, Emitter, Manager};
@@ -68,34 +68,52 @@ pub async fn cancel_recording_inner(app: AppHandle) -> Result<(), String> {
 pub async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
     let state = app.state::<AppState>();
 
-    let (audio, language, formatting_level, model_path_str, dict_words, dict_replacements) =
-        with_state(&state, |inner| {
-            if inner.status != AppStatus::Recording {
-                return Ok((
-                    Vec::new(),
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    Vec::new(),
-                    Vec::new(),
-                ));
-            }
+    let (
+        audio,
+        language,
+        formatting_level,
+        model_path_str,
+        dict_words,
+        dict_replacements,
+        prompt_mode_enabled,
+        prompt_mode_provider,
+        prompt_mode_model,
+        prompt_mode_api_key,
+    ) = with_state(&state, |inner| {
+        if inner.status != AppStatus::Recording {
+            return Ok((
+                Vec::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                Vec::new(),
+                Vec::new(),
+                false,
+                String::new(),
+                String::new(),
+                String::new(),
+            ));
+        }
 
-            inner.status = AppStatus::Processing;
-            let samples = inner.recorder.stop()?;
-            let model_path = model_file_path(&inner.config)
-                .to_str()
-                .ok_or_else(|| "invalid model path".to_string())?
-                .to_string();
-            Ok((
-                samples,
-                inner.config.general.language.clone(),
-                inner.config.formatting.level.clone(),
-                model_path,
-                inner.config.dictionary.words.clone(),
-                inner.config.dictionary.replacements.clone(),
-            ))
-        })?;
+        inner.status = AppStatus::Processing;
+        let samples = inner.recorder.stop()?;
+        let model_path = model_file_path(&inner.config)
+            .to_str()
+            .ok_or_else(|| "invalid model path".to_string())?
+            .to_string();
+        Ok((
+            samples,
+            inner.config.general.language.clone(),
+            inner.config.formatting.level.clone(),
+            model_path,
+            inner.config.dictionary.words.clone(),
+            inner.config.dictionary.replacements.clone(),
+            inner.config.prompt_mode.enabled,
+            inner.config.prompt_mode.provider.clone(),
+            inner.config.prompt_mode.model.clone(),
+            inner.config.prompt_mode.api_key.clone(),
+        ))
+    })?;
 
     if audio.is_empty() {
         set_widget_state(&app, "idle", None);
@@ -166,6 +184,38 @@ pub async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
         return Ok(String::new());
     }
 
+    let mut output_text = formatted;
+    if prompt_mode_enabled && !prompt_mode_api_key.trim().is_empty() {
+        set_widget_state(
+            &app,
+            "structuring",
+            Some("Structuring prompt...".to_string()),
+        );
+
+        match prompt::structure_prompt(
+            &output_text,
+            &prompt_mode_provider,
+            &prompt_mode_model,
+            &prompt_mode_api_key,
+        )
+        .await
+        {
+            Ok(structured) if !structured.trim().is_empty() => {
+                dlog!(
+                    "pipeline: prompt structuring done, len={}",
+                    structured.len()
+                );
+                output_text = structured;
+            }
+            Ok(_) => {
+                dlog!("pipeline: prompt structuring returned empty text, falling back");
+            }
+            Err(err) => {
+                dlog!("pipeline: prompt structuring failed, falling back: {err}");
+            }
+        }
+    }
+
     // Hide the widget BEFORE pasting so the target app regains focus.
     // Without this, Cmd+V goes to the widget window (which has focus if
     // the user clicked its stop button) instead of the intended app.
@@ -175,9 +225,9 @@ pub async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
     // Give the target app time to regain focus after the widget hides
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
-    dlog!("pipeline: injecting text len={}", formatted.len());
+    dlog!("pipeline: injecting text len={}", output_text.len());
     tauri::async_runtime::spawn_blocking({
-        let text = formatted.clone();
+        let text = output_text.clone();
         move || crate::injector::paste_text(&text)
     })
     .await
@@ -190,7 +240,7 @@ pub async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
     })?;
 
     set_widget_state(&app, "idle", None);
-    Ok(formatted)
+    Ok(output_text)
 }
 
 pub async fn run_model_download(
@@ -201,12 +251,8 @@ pub async fn run_model_download(
     use tauri::Emitter;
 
     if let Some(parent) = model_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            format!(
-                "failed to create model directory {}: {e}",
-                parent.display()
-            )
-        })?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create model directory {}: {e}", parent.display()))?;
     }
 
     let url = crate::config::model_download_url(&model_name);
@@ -223,12 +269,8 @@ pub async fn run_model_download(
         }
 
         let total = response.content_length().unwrap_or(0);
-        let mut file = File::create(&model_path).map_err(|e| {
-            format!(
-                "failed creating model file {}: {e}",
-                model_path.display()
-            )
-        })?;
+        let mut file = File::create(&model_path)
+            .map_err(|e| format!("failed creating model file {}: {e}", model_path.display()))?;
 
         let mut downloaded: u64 = 0;
         let mut buf = [0u8; 16 * 1024];

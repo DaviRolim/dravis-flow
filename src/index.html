@@ -50,6 +50,38 @@
       </section>
 
       <section class="panel">
+        <h2>Prompt Mode</h2>
+        <p class="panel-copy">Restructure transcription into a clean LLM-ready prompt before paste.</p>
+        <label class="switch-row" for="prompt-mode-enabled">
+          <span class="switch-copy">Enable Prompt Mode</span>
+          <span class="switch-control">
+            <input id="prompt-mode-enabled" class="switch-input" type="checkbox" />
+            <span class="switch-slider" aria-hidden="true"></span>
+          </span>
+        </label>
+        <div id="prompt-provider-switch" class="provider-switch" role="group" aria-label="Prompt provider">
+          <button class="provider-btn" id="prompt-provider-anthropic" data-provider="anthropic" type="button">
+            Anthropic
+          </button>
+          <button class="provider-btn" id="prompt-provider-openai" data-provider="openai" type="button">
+            OpenAI
+          </button>
+        </div>
+        <label for="prompt-api-key" class="sr-only">Prompt provider API key</label>
+        <div class="secret-input-row">
+          <input
+            id="prompt-api-key"
+            class="tag-input"
+            type="password"
+            placeholder="API key"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="prompt-api-visibility-btn" class="secondary" type="button">Show</button>
+        </div>
+      </section>
+
+      <section class="panel">
         <h2>Vocabulary</h2>
         <p class="panel-copy">Words Whisper should recognize. Tech terms, names, jargon.</p>
         <div id="vocab-list" class="tag-list"></div>
@@ -88,6 +120,10 @@
         <div class="waveform-wrap">
           <div class="waveform" id="waveform" aria-hidden="true"></div>
         </div>
+
+        <button id="prompt-mode-btn" class="widget-btn widget-btn-mode" type="button" aria-label="Enable Prompt Mode">
+          <span id="prompt-mode-icon" aria-hidden="true">&#9998;</span>
+        </button>
 
         <button id="stop-btn" class="widget-btn widget-btn-stop" type="button" aria-label="Stop recording">
           <span class="stop-square" aria-hidden="true"></span>

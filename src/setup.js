@@ -9,10 +9,22 @@ const MODEL_LABELS = {
   "small.en": "Small",
   "large-v3-turbo": "Large Turbo",
 };
+const PROMPT_PROVIDER_ANTHROPIC = "anthropic";
+const PROMPT_PROVIDER_OPENAI = "openai";
+const PROMPT_MODEL_DEFAULTS = {
+  [PROMPT_PROVIDER_ANTHROPIC]: "claude-haiku-4-5",
+  [PROMPT_PROVIDER_OPENAI]: "gpt-4o-mini",
+};
 
 let currentModel = "base.en";
 let vocabWords = [];
 let vocabReplacements = [];
+let promptModeConfig = {
+  enabled: false,
+  provider: PROMPT_PROVIDER_ANTHROPIC,
+  model: PROMPT_MODEL_DEFAULTS[PROMPT_PROVIDER_ANTHROPIC],
+  api_key: "",
+};
 let dictErrorTimer = null;
 
 function showDictError(dictErrorMsgEl, msg) {
@@ -137,6 +149,102 @@ async function addReplacement(invokeFn, replacementsListEl, errorEl, from, to) {
   }
 }
 
+function normalizePromptProvider(provider) {
+  return String(provider || "").toLowerCase() === PROMPT_PROVIDER_OPENAI
+    ? PROMPT_PROVIDER_OPENAI
+    : PROMPT_PROVIDER_ANTHROPIC;
+}
+
+function normalizePromptModeConfig(config) {
+  const provider = normalizePromptProvider(config?.provider);
+  const defaultModel = PROMPT_MODEL_DEFAULTS[provider] || PROMPT_MODEL_DEFAULTS[PROMPT_PROVIDER_ANTHROPIC];
+  const model = String(config?.model || "").trim() || defaultModel;
+  return {
+    enabled: Boolean(config?.enabled),
+    provider,
+    model,
+    api_key: String(config?.api_key || ""),
+  };
+}
+
+function applyPromptModeUI(
+  promptToggleEl,
+  promptProviderButtons,
+  promptApiKeyEl,
+  promptApiVisibilityBtnEl,
+) {
+  if (promptToggleEl) {
+    promptToggleEl.checked = promptModeConfig.enabled;
+  }
+
+  promptProviderButtons.forEach((button) => {
+    const isActive = button.dataset.provider === promptModeConfig.provider;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+
+  if (promptApiKeyEl) {
+    promptApiKeyEl.value = promptModeConfig.api_key;
+  }
+
+  if (promptApiVisibilityBtnEl) {
+    const isVisible = promptApiKeyEl?.type === "text";
+    promptApiVisibilityBtnEl.textContent = isVisible ? "Hide" : "Show";
+    promptApiVisibilityBtnEl.setAttribute("aria-label", isVisible ? "Hide API key" : "Show API key");
+  }
+}
+
+function toggleApiKeyVisibility(promptApiKeyEl, promptApiVisibilityBtnEl) {
+  if (!promptApiKeyEl || !promptApiVisibilityBtnEl) return;
+  const isVisible = promptApiKeyEl.type === "text";
+  promptApiKeyEl.type = isVisible ? "password" : "text";
+  promptApiVisibilityBtnEl.textContent = isVisible ? "Show" : "Hide";
+  promptApiVisibilityBtnEl.setAttribute("aria-label", isVisible ? "Show API key" : "Hide API key");
+}
+
+async function savePromptMode(invokeFn) {
+  const provider = normalizePromptProvider(promptModeConfig.provider);
+  promptModeConfig = {
+    ...promptModeConfig,
+    provider,
+    model:
+      String(promptModeConfig.model || "").trim() ||
+      PROMPT_MODEL_DEFAULTS[provider] ||
+      PROMPT_MODEL_DEFAULTS[PROMPT_PROVIDER_ANTHROPIC],
+    api_key: String(promptModeConfig.api_key || "").trim(),
+  };
+
+  const config = await invokeFn("set_prompt_mode", {
+    enabled: promptModeConfig.enabled,
+    provider: promptModeConfig.provider,
+    model: promptModeConfig.model,
+    api_key: promptModeConfig.api_key,
+  });
+
+  promptModeConfig = normalizePromptModeConfig(config?.prompt_mode || promptModeConfig);
+}
+
+async function updatePromptMode(
+  invokeFn,
+  promptToggleEl,
+  promptProviderButtons,
+  promptApiKeyEl,
+  promptApiVisibilityBtnEl,
+  mutateFn,
+) {
+  const previous = { ...promptModeConfig };
+  mutateFn();
+  applyPromptModeUI(promptToggleEl, promptProviderButtons, promptApiKeyEl, promptApiVisibilityBtnEl);
+  try {
+    await savePromptMode(invokeFn);
+    applyPromptModeUI(promptToggleEl, promptProviderButtons, promptApiKeyEl, promptApiVisibilityBtnEl);
+  } catch (error) {
+    promptModeConfig = previous;
+    applyPromptModeUI(promptToggleEl, promptProviderButtons, promptApiKeyEl, promptApiVisibilityBtnEl);
+    showDictError(dictErrorMsgEl, `Could not save Prompt Mode: ${error}`);
+  }
+}
+
 function applyModelUI(modelButtons, modelStatusEl, downloadBtn, modelName, confirmed) {
   modelButtons.forEach((btn) => {
     const isActive = btn.dataset.model === modelName;
@@ -175,12 +283,24 @@ async function saveModel(invokeFn, modelButtons, modelStatusEl, setupMessageEl, 
   }
 }
 
-async function loadConfig(invokeFn, modelButtons, modelStatusEl, downloadBtn, vocabListEl, replacementsListEl) {
+async function loadConfig(
+  invokeFn,
+  modelButtons,
+  modelStatusEl,
+  downloadBtn,
+  vocabListEl,
+  replacementsListEl,
+  promptToggleEl,
+  promptProviderButtons,
+  promptApiKeyEl,
+  promptApiVisibilityBtnEl,
+) {
   try {
     const config = await invokeFn("get_config");
     currentModel = config?.model?.name || "base.en";
     vocabWords = config?.dictionary?.words || [];
     vocabReplacements = config?.dictionary?.replacements || [];
+    promptModeConfig = normalizePromptModeConfig(config?.prompt_mode);
   } catch (_) {
     // ignore — applyModelUI will use the default
   }
@@ -188,6 +308,7 @@ async function loadConfig(invokeFn, modelButtons, modelStatusEl, downloadBtn, vo
   applyModelUI(modelButtons, modelStatusEl, downloadBtn, currentModel, true);
   renderVocabList(vocabListEl);
   renderReplacementsList(replacementsListEl);
+  applyPromptModeUI(promptToggleEl, promptProviderButtons, promptApiKeyEl, promptApiVisibilityBtnEl);
 }
 
 export async function initSetupView(invokeFn, listen) {
@@ -203,6 +324,10 @@ export async function initSetupView(invokeFn, listen) {
   const modelStatusEl = document.getElementById("model-status");
   const hotkeyHintEl = document.getElementById("hotkey-hint");
   const modelButtons = Array.from(document.querySelectorAll("#model-switch .mode-btn"));
+  const promptToggleEl = document.getElementById("prompt-mode-enabled");
+  const promptProviderButtons = Array.from(document.querySelectorAll("#prompt-provider-switch .provider-btn"));
+  const promptApiKeyEl = document.getElementById("prompt-api-key");
+  const promptApiVisibilityBtnEl = document.getElementById("prompt-api-visibility-btn");
   const vocabListEl = document.getElementById("vocab-list");
   const vocabInputEl = document.getElementById("vocab-input");
   const vocabAddBtnEl = document.getElementById("vocab-add-btn");
@@ -216,7 +341,18 @@ export async function initSetupView(invokeFn, listen) {
   widgetEl.classList.add("hidden");
 
   const [, modelResult] = await Promise.all([
-    loadConfig(invokeFn, modelButtons, modelStatusEl, downloadBtn, vocabListEl, replacementsListEl),
+    loadConfig(
+      invokeFn,
+      modelButtons,
+      modelStatusEl,
+      downloadBtn,
+      vocabListEl,
+      replacementsListEl,
+      promptToggleEl,
+      promptProviderButtons,
+      promptApiKeyEl,
+      promptApiVisibilityBtnEl,
+    ),
     invokeFn("check_model").catch((error) => ({ error })),
   ]);
 
@@ -225,6 +361,66 @@ export async function initSetupView(invokeFn, listen) {
       saveModel(invokeFn, modelButtons, modelStatusEl, setupMessageEl, downloadBtn, button.dataset.model || "base.en");
     });
   });
+
+  if (promptToggleEl) {
+    promptToggleEl.addEventListener("change", () =>
+      updatePromptMode(
+        invokeFn,
+        promptToggleEl,
+        promptProviderButtons,
+        promptApiKeyEl,
+        promptApiVisibilityBtnEl,
+        () => {
+          promptModeConfig.enabled = promptToggleEl.checked;
+        },
+      ),
+    );
+  }
+
+  promptProviderButtons.forEach((button) => {
+    button.addEventListener("click", () =>
+      updatePromptMode(
+        invokeFn,
+        promptToggleEl,
+        promptProviderButtons,
+        promptApiKeyEl,
+        promptApiVisibilityBtnEl,
+        () => {
+          const provider = normalizePromptProvider(button.dataset.provider);
+          promptModeConfig.provider = provider;
+          promptModeConfig.model = PROMPT_MODEL_DEFAULTS[provider];
+        },
+      ),
+    );
+  });
+
+  if (promptApiVisibilityBtnEl && promptApiKeyEl) {
+    promptApiVisibilityBtnEl.addEventListener("click", () => {
+      toggleApiKeyVisibility(promptApiKeyEl, promptApiVisibilityBtnEl);
+      promptApiKeyEl.focus();
+    });
+  }
+
+  if (promptApiKeyEl) {
+    promptApiKeyEl.addEventListener("blur", () =>
+      updatePromptMode(
+        invokeFn,
+        promptToggleEl,
+        promptProviderButtons,
+        promptApiKeyEl,
+        promptApiVisibilityBtnEl,
+        () => {
+          promptModeConfig.api_key = promptApiKeyEl.value;
+        },
+      ),
+    );
+    promptApiKeyEl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        promptApiKeyEl.blur();
+      }
+    });
+  }
 
   if (vocabAddBtnEl && vocabInputEl) {
     vocabAddBtnEl.addEventListener("click", () => {
