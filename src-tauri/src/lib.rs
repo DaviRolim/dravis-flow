@@ -52,6 +52,8 @@ struct InnerState {
     recorder: AudioRecorder,
     config: AppConfig,
     toggle_shortcut_held: bool,
+    press_instant: Option<std::time::Instant>,
+    toggle_active: bool,
 }
 
 impl AppState {
@@ -65,6 +67,8 @@ impl AppState {
                 recorder: AudioRecorder::new(),
                 config,
                 toggle_shortcut_held: false,
+                press_instant: None,
+                toggle_active: false,
             }),
             whisper_ctx: Mutex::new(None),
         }
@@ -190,6 +194,8 @@ async fn cancel_recording_inner(app: AppHandle) -> Result<(), String> {
 
         let _ = inner.recorder.stop();
         inner.status = "idle".to_string();
+        inner.toggle_active = false;
+        inner.press_instant = None;
         Ok(())
     })?;
 
@@ -223,6 +229,8 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
         set_widget_state(&app, "idle", None);
         with_state(&state, |inner| {
             inner.status = "idle".to_string();
+            inner.toggle_active = false;
+            inner.press_instant = None;
             Ok(())
         })?;
         return Ok(String::new());
@@ -235,6 +243,8 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
         );
         with_state(&state, |inner| {
             inner.status = "idle".to_string();
+            inner.toggle_active = false;
+            inner.press_instant = None;
             Ok(())
         })?;
         set_widget_state(&app, "idle", None);
@@ -275,6 +285,8 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
         eprintln!("empty transcript; skipping paste");
         with_state(&state, |inner| {
             inner.status = "idle".to_string();
+            inner.toggle_active = false;
+            inner.press_instant = None;
             Ok(())
         })?;
         set_widget_state(&app, "idle", None);
@@ -292,6 +304,8 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
 
     with_state(&state, |inner| {
         inner.status = "idle".to_string();
+        inner.toggle_active = false;
+        inner.press_instant = None;
         Ok(())
     })?;
 
@@ -501,10 +515,16 @@ fn build_tray(app: &AppHandle) -> Result<(), String> {
 }
 
 fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
+    // How it works (WisprFlow-style dual mode):
+    // - Hold the hotkey (>= 300 ms): push-to-talk — release stops recording.
+    // - Quick tap (< 300 ms): toggle mode — tap again to stop.
+    const HOLD_THRESHOLD_MS: u128 = 300;
+
     #[derive(Clone, Copy)]
     enum ShortcutAction {
         Start,
         Stop,
+        ToggleActivated,
     }
 
     let action = {
@@ -514,36 +534,50 @@ fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
             Err(_) => return,
         };
 
-        let mode = sanitize_recording_mode(&lock.config.general.mode);
-        match mode.as_str() {
-            MODE_TOGGLE => match state {
-                // Toggle mode reacts once per physical key press. Repeated `Pressed`
-                // events while the key is held down can otherwise cause immediate
-                // start/stop loops and drop recordings.
-                ShortcutState::Pressed => {
-                    if lock.toggle_shortcut_held {
-                        None
+        // Clean up stale toggle state if recording ended externally (e.g. stop button).
+        if lock.toggle_active && lock.status != "recording" {
+            lock.toggle_active = false;
+            lock.press_instant = None;
+        }
+
+        match state {
+            ShortcutState::Pressed => {
+                // Ignore key-repeat events while the key is physically held.
+                if lock.toggle_shortcut_held {
+                    None
+                } else {
+                    lock.toggle_shortcut_held = true;
+                    if lock.toggle_active {
+                        // We're in toggle mode — stop on this press.
+                        lock.toggle_active = false;
+                        Some(ShortcutAction::Stop)
+                    } else if lock.status == "idle" {
+                        lock.press_instant = Some(std::time::Instant::now());
+                        Some(ShortcutAction::Start)
                     } else {
-                        lock.toggle_shortcut_held = true;
-                        if lock.status == "recording" {
-                            Some(ShortcutAction::Stop)
-                        } else if lock.status == "idle" {
-                            Some(ShortcutAction::Start)
-                        } else {
-                            None
-                        }
+                        None
                     }
                 }
-                ShortcutState::Released => {
-                    lock.toggle_shortcut_held = false;
+            }
+            ShortcutState::Released => {
+                lock.toggle_shortcut_held = false;
+                if lock.status == "recording" && !lock.toggle_active {
+                    let held_ms = lock
+                        .press_instant
+                        .map(|t| t.elapsed().as_millis())
+                        .unwrap_or(HOLD_THRESHOLD_MS + 1);
+                    if held_ms >= HOLD_THRESHOLD_MS {
+                        // Held long enough: push-to-talk — stop now.
+                        Some(ShortcutAction::Stop)
+                    } else {
+                        // Quick tap: switch to toggle mode, keep recording.
+                        lock.toggle_active = true;
+                        Some(ShortcutAction::ToggleActivated)
+                    }
+                } else {
                     None
                 }
-            },
-            _ => match state {
-                ShortcutState::Pressed if lock.status == "idle" => Some(ShortcutAction::Start),
-                ShortcutState::Released if lock.status == "recording" => Some(ShortcutAction::Stop),
-                _ => None,
-            },
+            }
         }
     };
 
@@ -551,11 +585,17 @@ fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
         return;
     };
 
+    if matches!(action, ShortcutAction::ToggleActivated) {
+        let _ = app.emit("toggle_mode_active", ());
+        return;
+    }
+
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
         let out = match action {
             ShortcutAction::Start => start_recording_inner(app_clone.clone()).await,
             ShortcutAction::Stop => stop_recording_inner(app_clone.clone()).await.map(|_| ()),
+            ShortcutAction::ToggleActivated => unreachable!(),
         };
 
         if let Err(err) = out {
@@ -564,6 +604,8 @@ fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
             if let Ok(mut lock) = app_clone.state::<AppState>().inner_state.lock() {
                 lock.status = "idle".to_string();
                 lock.toggle_shortcut_held = false;
+                lock.toggle_active = false;
+                lock.press_instant = None;
                 let _ = lock.recorder.stop();
             };
         }

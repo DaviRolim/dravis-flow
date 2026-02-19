@@ -22,7 +22,7 @@
         "label": "widget",
         "title": "DraVis Flow Recorder",
         "url": "index.html?view=widget",
-        "width": 176,
+        "width": 200,
         "height": 46,
         "resizable": false,
         "decorations": false,
@@ -48,6 +48,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "infoPlist": "Info.plist"
+    }
   }
 }
