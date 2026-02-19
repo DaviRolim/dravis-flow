@@ -57,14 +57,16 @@ body {
 
 body.view-setup {
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 0;
   background:
     radial-gradient(circle at 12% -8%, rgba(180, 79, 255, 0.18), transparent 38%),
     radial-gradient(circle at 88% 0%, rgba(229, 53, 171, 0.18), transparent 36%),
     linear-gradient(160deg, var(--color-bg-2), var(--color-bg-1) 42%, var(--color-bg-0));
   position: relative;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 body.view-setup::before {
