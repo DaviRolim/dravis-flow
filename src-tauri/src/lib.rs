@@ -51,6 +51,7 @@ struct InnerState {
     status: String,
     recorder: AudioRecorder,
     config: AppConfig,
+    toggle_shortcut_held: bool,
 }
 
 impl AppState {
@@ -63,6 +64,7 @@ impl AppState {
                 status: "idle".to_string(),
                 recorder: AudioRecorder::new(),
                 config,
+                toggle_shortcut_held: false,
             }),
             whisper_ctx: Mutex::new(None),
         }
@@ -329,6 +331,7 @@ fn set_recording_mode(state: State<AppState>, mode: String) -> Result<AppConfig,
 
     with_state(&state, |inner| {
         inner.config.general.mode = normalized.clone();
+        inner.toggle_shortcut_held = false;
         save_config(&inner.config)?;
         Ok(inner.config.clone())
     })
@@ -336,7 +339,7 @@ fn set_recording_mode(state: State<AppState>, mode: String) -> Result<AppConfig,
 
 #[tauri::command]
 fn set_model(state: State<AppState>, name: String) -> Result<ModelStatus, String> {
-    use config::{normalized_model_name, model_filename};
+    use config::normalized_model_name;
 
     let model_name = normalized_model_name(&name).to_string();
 
@@ -376,7 +379,10 @@ fn check_model(state: State<AppState>) -> Result<ModelStatus, String> {
 #[tauri::command]
 async fn download_model(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let (model_path, model_name) = with_state(&state, |inner| {
-        Ok((model_file_path(&inner.config), inner.config.model.name.clone()))
+        Ok((
+            model_file_path(&inner.config),
+            inner.config.model.name.clone(),
+        ))
     })?;
 
     if model_path.exists() {
@@ -503,24 +509,36 @@ fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
 
     let action = {
         let app_state = app.state::<AppState>();
-        let lock = match app_state.inner_state.lock() {
+        let mut lock = match app_state.inner_state.lock() {
             Ok(lock) => lock,
             Err(_) => return,
         };
 
         let mode = sanitize_recording_mode(&lock.config.general.mode);
         match mode.as_str() {
-            MODE_TOGGLE => {
-                if state != ShortcutState::Pressed {
-                    None
-                } else if lock.status == "recording" {
-                    Some(ShortcutAction::Stop)
-                } else if lock.status == "idle" {
-                    Some(ShortcutAction::Start)
-                } else {
+            MODE_TOGGLE => match state {
+                // Toggle mode reacts once per physical key press. Repeated `Pressed`
+                // events while the key is held down can otherwise cause immediate
+                // start/stop loops and drop recordings.
+                ShortcutState::Pressed => {
+                    if lock.toggle_shortcut_held {
+                        None
+                    } else {
+                        lock.toggle_shortcut_held = true;
+                        if lock.status == "recording" {
+                            Some(ShortcutAction::Stop)
+                        } else if lock.status == "idle" {
+                            Some(ShortcutAction::Start)
+                        } else {
+                            None
+                        }
+                    }
+                }
+                ShortcutState::Released => {
+                    lock.toggle_shortcut_held = false;
                     None
                 }
-            }
+            },
             _ => match state {
                 ShortcutState::Pressed if lock.status == "idle" => Some(ShortcutAction::Start),
                 ShortcutState::Released if lock.status == "recording" => Some(ShortcutAction::Stop),
@@ -545,6 +563,7 @@ fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
             set_widget_state(&app_clone, "error", Some(err.clone()));
             if let Ok(mut lock) = app_clone.state::<AppState>().inner_state.lock() {
                 lock.status = "idle".to_string();
+                lock.toggle_shortcut_held = false;
                 let _ = lock.recorder.stop();
             };
         }

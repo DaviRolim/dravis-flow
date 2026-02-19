@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DraVis Flow</title>
     <link rel="stylesheet" href="style.css" />
-    <script type="module" src="/main.js" defer></script>
+    <script type="module" src="./main.js" defer></script>
   </head>
   <body class="theme-cyberpunk">
     <main id="setup" class="setup hidden">
@@ -58,6 +58,7 @@
             <span class="mode-copy">Best quality. Cleans stutters and fillers.</span>
           </button>
         </div>
+        <p id="model-status" class="mode-status">Loading selected model...</p>
       </section>
 
       <section class="panel">
@@ -76,9 +77,9 @@
     </main>
 
     <main id="widget" class="widget-root hidden" aria-live="polite">
-      <div class="recording-pill" id="recording-pill">
+      <div class="recording-pill hold-mode" id="recording-pill">
         <button id="cancel-btn" class="widget-btn widget-btn-ghost" type="button" aria-label="Cancel recording">
-          <span aria-hidden="true">x</span>
+          <span aria-hidden="true">&times;</span>
         </button>
 
         <div class="waveform-wrap">

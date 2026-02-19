@@ -19,6 +19,13 @@
   --color-border-default: rgba(255, 51, 153, 0.24);
   --color-border-active: rgba(180, 79, 255, 0.78);
   --color-border-glow: rgba(229, 53, 171, 0.44);
+  --color-option-bg: linear-gradient(180deg, rgba(18, 18, 28, 0.92), rgba(11, 11, 18, 0.96));
+  --color-option-bg-active: linear-gradient(
+    130deg,
+    rgba(180, 79, 255, 0.34) 0%,
+    rgba(255, 45, 149, 0.2) 44%,
+    rgba(18, 15, 32, 0.96) 100%
+  );
 
   --color-danger: #ff5a86;
 
@@ -49,6 +56,10 @@ body {
   min-height: 100%;
 }
 
+html {
+  background: transparent;
+}
+
 body {
   font-family: var(--font-body);
   color: var(--color-text-primary);
@@ -57,10 +68,8 @@ body {
 
 body.view-setup {
   min-height: 100vh;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 24px 0;
+  display: block;
+  padding: 0;
   background:
     radial-gradient(circle at 12% -8%, rgba(180, 79, 255, 0.18), transparent 38%),
     radial-gradient(circle at 88% 0%, rgba(229, 53, 171, 0.18), transparent 36%),
@@ -107,31 +116,37 @@ body.view-widget {
   background: transparent;
 }
 
+body.view-widget::before,
+body.view-widget::after {
+  display: none;
+}
+
 .hidden {
   display: none !important;
 }
 
 .setup {
-  width: min(620px, 90vw);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border-default);
-  background: linear-gradient(180deg, rgba(26, 26, 46, 0.94), rgba(17, 17, 24, 0.96));
-  box-shadow: var(--glow-lg);
-  padding: var(--spacing-md) var(--spacing-md) calc(var(--spacing-md) - 2px);
-  backdrop-filter: blur(12px);
+  width: min(920px, 100%);
+  min-height: 100vh;
+  margin: 0 auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 18px 20px 12px;
+  backdrop-filter: none;
   position: relative;
   z-index: 1;
 }
 
 .window-head {
   display: grid;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-xs);
   margin-bottom: var(--spacing-md);
 }
 
 .window-lights {
-  display: flex;
-  gap: 6px;
+  display: none;
 }
 
 .light {
@@ -213,14 +228,55 @@ body.view-widget {
 
 .mode-btn {
   width: 100%;
-  border: 1px solid rgba(255, 51, 153, 0.24);
-  background: linear-gradient(180deg, rgba(26, 26, 46, 0.78), rgba(17, 17, 24, 0.9));
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 51, 153, 0.2);
+  background: var(--color-option-bg);
   border-radius: var(--radius-md);
-  padding: 8px 10px;
+  padding: 9px 42px 9px 12px;
   color: var(--color-text-primary);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease,
+    background 0.18s ease;
+}
+
+.mode-btn::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 3px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, var(--color-accent-primary), var(--color-accent-secondary));
+  opacity: 0;
+  transform: scaleY(0.35);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.mode-btn::after {
+  content: "ON";
+  position: absolute;
+  top: 10px;
+  right: 11px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-title);
+  font-size: 0.42rem;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: rgba(12, 8, 22, 0.95);
+  background: linear-gradient(135deg, #ff8cd7, #c97cff);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 10px rgba(255, 45, 149, 0.34);
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
 }
 
 .mode-btn:hover {
@@ -236,9 +292,21 @@ body.view-widget {
 }
 
 .mode-btn.active {
-  border-color: var(--color-border-active);
-  box-shadow: var(--glow-sm);
-  background: linear-gradient(180deg, rgba(35, 21, 59, 0.7), rgba(17, 17, 24, 0.95));
+  border-color: rgba(214, 133, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(214, 133, 255, 0.34), 0 12px 24px rgba(5, 3, 13, 0.7),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  background: var(--color-option-bg-active);
+  transform: translateY(-1px);
+}
+
+.mode-btn.active::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.mode-btn.active::after {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .mode-title {
@@ -247,14 +315,24 @@ body.view-widget {
   font-size: 0.84rem;
   letter-spacing: 0.03em;
   text-transform: uppercase;
+  color: #f0ebff;
 }
 
 .mode-copy {
   display: block;
   margin-top: 4px;
   font-size: 0.79rem;
-  color: var(--color-text-secondary);
+  color: #c2bdd5;
   line-height: 1.35;
+}
+
+.mode-btn.active .mode-title {
+  color: #ffffff;
+  text-shadow: 0 0 16px rgba(196, 113, 255, 0.28);
+}
+
+.mode-btn.active .mode-copy {
+  color: #f6efff;
 }
 
 .mode-status {
@@ -346,22 +424,34 @@ body.view-widget {
   height: 100vh;
   display: grid;
   place-items: center;
+  padding: 0;
   background: transparent;
 }
 
 .recording-pill {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 6px 9px;
   border-radius: var(--radius-pill);
-  border: 1px solid rgba(180, 79, 255, 0.5);
-  background: rgba(10, 10, 15, 0.95);
-  box-shadow: 0 10px 28px rgba(4, 3, 12, 0.68), 0 0 0 1px rgba(180, 79, 255, 0.16);
+  border: none;
+  background: linear-gradient(180deg, rgba(18, 18, 28, 0.97), rgba(8, 8, 14, 0.97));
+  box-shadow: 0 6px 16px rgba(2, 2, 6, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 0 2px rgba(180, 79, 255, 0.16);
   opacity: 0;
-  transform: translateY(8px) scale(0.95);
+  transform: translateY(6px) scale(0.95);
   transition: opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1), transform 0.26s
-      cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+      cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
+  pointer-events: none;
+}
+
+.recording-pill::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.04);
   pointer-events: none;
 }
 
@@ -372,28 +462,29 @@ body.view-widget {
 }
 
 .recording-pill.processing {
-  border-color: rgba(255, 45, 149, 0.72);
-  box-shadow: 0 0 0 1px rgba(255, 45, 149, 0.2), 0 8px 24px rgba(4, 3, 12, 0.72),
-    0 0 18px rgba(255, 45, 149, 0.22);
+  box-shadow: 0 6px 16px rgba(2, 2, 6, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 0 2px rgba(255, 45, 149, 0.28), 0 0 16px rgba(255, 45, 149, 0.24);
 }
 
 .recording-pill.error {
-  border-color: rgba(255, 90, 134, 0.76);
+  box-shadow: 0 6px 16px rgba(2, 2, 6, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 0 2px rgba(255, 90, 134, 0.3);
 }
 
 .widget-btn {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
-  border: 1px solid transparent;
+  border: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-family: var(--font-title);
+  font-family: var(--font-body);
+  font-weight: 600;
   line-height: 1;
-  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease,
-    box-shadow 0.2s ease, opacity 0.2s ease;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease,
+    opacity 0.2s ease;
 }
 
 .widget-btn:hover:enabled {
@@ -407,32 +498,51 @@ body.view-widget {
   box-shadow: none;
 }
 
+.recording-pill .widget-btn {
+  display: none;
+}
+
+.recording-pill.hold-mode {
+  gap: 0;
+  padding-inline: 12px;
+}
+
+.recording-pill.toggle-mode {
+  gap: 8px;
+  padding-inline: 10px;
+}
+
+.recording-pill.toggle-mode .widget-btn {
+  display: inline-flex;
+  margin-inline: 2px;
+}
+
 .widget-btn-ghost {
-  background: rgba(26, 26, 36, 0.9);
-  color: var(--color-text-secondary);
-  font-size: 9px;
-  border-color: rgba(180, 79, 255, 0.2);
+  background: linear-gradient(180deg, rgba(61, 60, 76, 0.94), rgba(38, 38, 52, 0.94));
+  color: rgba(248, 246, 255, 0.92);
+  font-size: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 .widget-btn-ghost:hover:enabled {
-  border-color: rgba(180, 79, 255, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 0 10px rgba(180, 79, 255, 0.24);
 }
 
 .widget-btn-stop {
-  background: rgba(26, 26, 36, 0.9);
+  background: radial-gradient(circle at 32% 25%, #ff7ebb 0%, #ff2d95 54%, #e31f78 100%);
   color: var(--color-text-primary);
-  border-color: rgba(255, 45, 149, 0.4);
+  box-shadow: 0 0 0 1px rgba(255, 173, 210, 0.24), 0 4px 14px rgba(255, 45, 149, 0.42);
   animation: pulse-stop 1.8s ease-in-out infinite;
 }
 
 .recording-pill.processing .widget-btn-stop {
-  border-color: rgba(180, 79, 255, 0.78);
-  box-shadow: 0 0 10px rgba(180, 79, 255, 0.24);
+  box-shadow: 0 0 0 1px rgba(217, 134, 255, 0.28), 0 0 14px rgba(180, 79, 255, 0.28);
   animation: none;
 }
 
 .waveform-wrap {
-  min-width: 120px;
+  min-width: 85px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -444,35 +554,31 @@ body.view-widget {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1.5px;
-  height: 30px;
+  gap: 2px;
+  height: 19px;
 }
 
 .waveform .bar {
   --bar-energy: 0;
-  width: 2px;
-  height: 28px;
-  background: linear-gradient(
-    180deg,
-    var(--color-accent-secondary),
-    var(--color-accent-primary)
-  );
+  width: 2.4px;
+  height: 19px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 228, 246, 0.9));
   border-radius: var(--radius-pill);
-  box-shadow: 0 0 calc(2px + (var(--bar-energy) * 8px))
-    rgba(229, 53, 171, calc(0.18 + (var(--waveform-level) * 0.42)));
-  transform: scaleY(0.15);
+  box-shadow: 0 0 calc(2px + (var(--bar-energy) * 5px))
+    rgba(255, 255, 255, calc(0.16 + (var(--waveform-level) * 0.28)));
+  transform: scaleY(0.16);
   transform-origin: center;
   will-change: transform, box-shadow;
 }
 
 .recording-pill.processing .waveform .bar {
-  background: linear-gradient(180deg, var(--color-accent-primary), var(--color-accent-secondary));
-  box-shadow: 0 0 calc(2px + (var(--bar-energy) * 7px))
-    rgba(255, 45, 149, calc(0.14 + (var(--waveform-level) * 0.34)));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(236, 201, 255, 0.9));
+  box-shadow: 0 0 calc(2px + (var(--bar-energy) * 6px))
+    rgba(194, 124, 255, calc(0.14 + (var(--waveform-level) * 0.32)));
 }
 
 .recording-pill.error .waveform .bar {
-  background: rgba(255, 90, 134, 0.9);
+  background: rgba(255, 172, 203, 0.95);
   box-shadow: none;
 }
 

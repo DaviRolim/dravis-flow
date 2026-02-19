@@ -149,7 +149,10 @@ mod tests {
     fn maps_model_names_to_expected_files_and_urls() {
         assert_eq!(model_filename(MODEL_BASE_EN), "ggml-base.en.bin");
         assert_eq!(model_filename(MODEL_SMALL_EN), "ggml-small.en.bin");
-        assert_eq!(model_filename(MODEL_LARGE_V3_TURBO), "ggml-large-v3-turbo.bin");
+        assert_eq!(
+            model_filename(MODEL_LARGE_V3_TURBO),
+            "ggml-large-v3-turbo.bin"
+        );
 
         assert_eq!(
             model_download_url(MODEL_BASE_EN),

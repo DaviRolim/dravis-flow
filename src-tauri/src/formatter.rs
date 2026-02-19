@@ -26,7 +26,7 @@ pub fn format_text(input: &str) -> String {
         ("hadnt", "hadn't"),
         ("youre", "you're"),
         ("theyre", "they're"),
-        ("were", "we're"),   // careful — also a real word, handled below
+        ("were", "we're"), // careful — also a real word, handled below
         ("thats", "that's"),
         ("whats", "what's"),
         ("heres", "here's"),
@@ -57,19 +57,27 @@ fn capitalize_i_forms(text: &str) -> String {
 
     for word in words {
         let lower = word.to_lowercase();
-        let fixed = match lower.trim_end_matches(|c: char| c == ',' || c == '.' || c == '!' || c == '?') {
-            "i" => word.to_lowercase().replacen("i", "I", 1),
-            w if w.starts_with("i'") || w.starts_with("i'") => {
-                // i'm, i'd, i'll, i've, i'd
-                let rest = &lower[1..];
-                format!("I{rest}")
-            }
-            _ => word.to_string(),
-        };
+        let fixed =
+            match lower.trim_end_matches(|c: char| c == ',' || c == '.' || c == '!' || c == '?') {
+                "i" => word.to_lowercase().replacen("i", "I", 1),
+                w if w.starts_with("i'") || w.starts_with("i'") => {
+                    // i'm, i'd, i'll, i've, i'd
+                    let rest = &lower[1..];
+                    format!("I{rest}")
+                }
+                _ => word.to_string(),
+            };
         // Preserve trailing punctuation from original
-        let trailing: String = word.chars().rev().take_while(|c| matches!(c, ',' | '.' | '!' | '?')).collect();
+        let trailing: String = word
+            .chars()
+            .rev()
+            .take_while(|c| matches!(c, ',' | '.' | '!' | '?'))
+            .collect();
         if !trailing.is_empty() && !fixed.ends_with(|c: char| matches!(c, ',' | '.' | '!' | '?')) {
-            out.push(format!("{fixed}{}", trailing.chars().rev().collect::<String>()));
+            out.push(format!(
+                "{fixed}{}",
+                trailing.chars().rev().collect::<String>()
+            ));
         } else {
             out.push(fixed);
         }
@@ -84,7 +92,8 @@ fn replace_whole_word_ci(text: &str, from: &str, to: &str) -> String {
     let mut out = Vec::with_capacity(words.len());
 
     for word in &words {
-        let stripped = word.trim_end_matches(|c: char| c == ',' || c == '.' || c == '!' || c == '?');
+        let stripped =
+            word.trim_end_matches(|c: char| c == ',' || c == '.' || c == '!' || c == '?');
         let trailing = &word[stripped.len()..];
 
         if stripped.eq_ignore_ascii_case(from) {
@@ -335,7 +344,10 @@ fn normalize_spacing(text: &str) -> String {
         out = out.replace(from, to);
     }
 
-    collapse_whitespace(&out).trim_matches(',').trim().to_string()
+    collapse_whitespace(&out)
+        .trim_matches(',')
+        .trim()
+        .to_string()
 }
 
 #[cfg(test)]
@@ -349,7 +361,10 @@ mod tests {
 
     #[test]
     fn removes_stutter_with_ellipsis() {
-        assert_eq!(format_text("i... i... i... i'm actually ready"), "I'm actually ready.");
+        assert_eq!(
+            format_text("i... i... i... i'm actually ready"),
+            "I'm actually ready."
+        );
     }
 
     #[test]

@@ -26,8 +26,9 @@ const progressWrap = document.getElementById("progress-wrap");
 const progressEl = document.getElementById("progress");
 const progressTextEl = document.getElementById("progress-text");
 const modeStatusEl = document.getElementById("mode-status");
+const modelStatusEl = document.getElementById("model-status");
 const hotkeyHintEl = document.getElementById("hotkey-hint");
-const modeButtons = Array.from(document.querySelectorAll(".mode-btn"));
+const modeButtons = Array.from(document.querySelectorAll("#mode-switch .mode-btn"));
 
 const pill = document.getElementById("recording-pill");
 const waveformEl = document.getElementById("waveform");
@@ -62,6 +63,35 @@ function normalizeMode(mode) {
   return mode === "toggle" ? "toggle" : "hold";
 }
 
+function isToggleRecordingMode() {
+  return normalizeMode(currentMode) === "toggle";
+}
+
+function applyWidgetModeUI(mode) {
+  const normalized = normalizeMode(mode);
+  const showActionButtons = normalized === "toggle";
+
+  pill.classList.toggle("toggle-mode", showActionButtons);
+  pill.classList.toggle("hold-mode", !showActionButtons);
+  stopBtn.tabIndex = showActionButtons ? 0 : -1;
+  cancelBtn.tabIndex = showActionButtons ? 0 : -1;
+
+  if (!showActionButtons) {
+    setWidgetButtonsEnabled(false);
+  }
+}
+
+async function loadWidgetMode() {
+  try {
+    const config = await invoke("get_config");
+    currentMode = normalizeMode(config?.general?.mode || currentMode);
+  } catch (error) {
+    currentMode = normalizeMode(currentMode);
+  }
+
+  applyWidgetModeUI(currentMode);
+}
+
 function applyModeUI(mode, saved = true) {
   const normalized = normalizeMode(mode);
   const toggleMessage =
@@ -80,6 +110,8 @@ function applyModeUI(mode, saved = true) {
     button.classList.toggle("active", isActive);
     button.setAttribute("aria-checked", String(isActive));
   });
+
+  applyWidgetModeUI(normalized);
 }
 
 async function saveMode(nextMode) {
@@ -108,6 +140,12 @@ const MODEL_SIZES = {
   "large-v3-turbo": "809 MB",
 };
 
+const MODEL_LABELS = {
+  "base.en": "Base",
+  "small.en": "Small",
+  "large-v3-turbo": "Large Turbo",
+};
+
 let currentModel = "base.en";
 const modelButtons = Array.from(document.querySelectorAll("#model-switch .mode-btn"));
 
@@ -117,7 +155,11 @@ function applyModelUI(modelName, confirmed) {
     btn.classList.toggle("active", isActive);
     btn.setAttribute("aria-checked", String(isActive));
   });
+  const label = MODEL_LABELS[modelName] || modelName;
   const size = MODEL_SIZES[modelName] || "";
+  modelStatusEl.textContent = confirmed
+    ? `Current model: ${label}${size ? ` (${size})` : ""}.`
+    : "Saving model...";
   downloadBtn.textContent = size ? `Download Model (${size})` : "Download Model";
 }
 
@@ -151,12 +193,12 @@ async function loadConfig() {
     const config = await invoke("get_config");
     currentMode = normalizeMode(config?.general?.mode || "hold");
     currentModel = config?.model?.name || "base.en";
-    applyModelUI(currentModel, true);
   } catch (error) {
     currentMode = "hold";
     modeStatusEl.textContent = `Config load failed: ${error}`;
   }
 
+  applyModelUI(currentModel, true);
   applyModeUI(currentMode, true);
 }
 
@@ -318,7 +360,7 @@ function setWidgetStatus(status, message = "") {
 
   if (nextStatus === "recording") {
     waveformState = "recording";
-    setWidgetButtonsEnabled(true);
+    setWidgetButtonsEnabled(isToggleRecordingMode());
     pill.classList.add("visible");
     startWaveformAnimation();
     return;
@@ -409,6 +451,10 @@ async function initSetupView() {
 }
 
 async function runWidgetAction(commandName) {
+  if (!isToggleRecordingMode()) {
+    return;
+  }
+
   if (widgetActionPending) {
     return;
   }
@@ -429,6 +475,7 @@ async function initWidgetView() {
   setupEl.classList.add("hidden");
   widgetEl.classList.remove("hidden");
 
+  await loadWidgetMode();
   initBars();
   setWidgetStatus("idle");
 
@@ -439,8 +486,9 @@ async function initWidgetView() {
     listen("audio_level", (event) => {
       renderLevel(event.payload || 0);
     }),
-    listen("status", (event) => {
+    listen("status", async (event) => {
       const payload = event.payload || {};
+      await loadWidgetMode();
       setWidgetStatus(payload.status || "idle", payload.message || "");
     }),
   ]);
@@ -454,25 +502,36 @@ async function initWidgetView() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
-  const tauriApi = getTauriApi();
-  if (!tauriApi) {
+  try {
+    const tauriApi = getTauriApi();
+    if (!tauriApi) {
+      document.body.classList.add("view-setup");
+      setupEl.classList.remove("hidden");
+      widgetEl.classList.add("hidden");
+      setupMessageEl.textContent =
+        "Failed to initialize Tauri runtime API. Restart the app to retry.";
+      modeStatusEl.textContent = "Runtime API unavailable.";
+      hotkeyHintEl.textContent = "Hotkey unavailable until runtime is restored.";
+      downloadBtn.classList.add("hidden");
+      return;
+    }
+
+    ({ invoke, listen } = tauriApi);
+    document.body.classList.add(view === "widget" ? "view-widget" : "view-setup");
+
+    if (view === "widget") {
+      await initWidgetView();
+    } else {
+      await initSetupView();
+    }
+  } catch (error) {
+    console.error("Frontend initialization failed:", error);
     document.body.classList.add("view-setup");
     setupEl.classList.remove("hidden");
     widgetEl.classList.add("hidden");
-    setupMessageEl.textContent =
-      "Failed to initialize Tauri runtime API. Restart the app to retry.";
-    modeStatusEl.textContent = "Runtime API unavailable.";
-    hotkeyHintEl.textContent = "Hotkey unavailable until runtime is restored.";
+    setupMessageEl.textContent = `Frontend initialization failed: ${String(error)}`;
+    modeStatusEl.textContent = "Initialization error";
+    hotkeyHintEl.textContent = "Hotkey unavailable until this error is resolved.";
     downloadBtn.classList.add("hidden");
-    return;
-  }
-
-  ({ invoke, listen } = tauriApi);
-  document.body.classList.add(view === "widget" ? "view-widget" : "view-setup");
-
-  if (view === "widget") {
-    await initWidgetView();
-  } else {
-    await initSetupView();
   }
 });
