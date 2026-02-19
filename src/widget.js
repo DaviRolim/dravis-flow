@@ -48,14 +48,6 @@ function normalizePromptModeConfig(config) {
   };
 }
 
-function setPromptModeButtonState(button, enabled) {
-  if (!button) return;
-  button.classList.toggle("active", enabled);
-  button.innerHTML = enabled ? "&#9889;" : "&#9998;";
-  button.setAttribute("aria-label", enabled ? "Disable Prompt Mode" : "Enable Prompt Mode");
-  button.title = enabled ? "Prompt Mode ON" : "Prompt Mode OFF";
-}
-
 let bars = [];
 let barStates = [];
 let pendingLevel = 0;
@@ -65,7 +57,7 @@ let lastWaveformTimestamp = 0;
 let waveformState = "idle";
 let isToggleMode = false;
 let widgetActionPending = false;
-let promptModeActionPending = false;
+// Prompt mode config is read-only in widget — toggled via config panel
 let promptModeConfig = {
   enabled: false,
   provider: PROMPT_PROVIDER_ANTHROPIC,
@@ -278,35 +270,6 @@ async function runWidgetAction(invoke, pill, waveformEl, stopBtn, cancelBtn, com
   }
 }
 
-async function togglePromptMode(invoke, promptModeBtn) {
-  if (promptModeActionPending || !promptModeBtn) return;
-
-  promptModeActionPending = true;
-  promptModeBtn.disabled = true;
-
-  const previous = { ...promptModeConfig };
-  promptModeConfig.enabled = !promptModeConfig.enabled;
-  setPromptModeButtonState(promptModeBtn, promptModeConfig.enabled);
-
-  try {
-    const updatedConfig = await invoke("set_prompt_mode", {
-      enabled: promptModeConfig.enabled,
-      provider: promptModeConfig.provider,
-      model: promptModeConfig.model,
-      apiKey: promptModeConfig.api_key,
-    });
-    promptModeConfig = normalizePromptModeConfig(updatedConfig?.prompt_mode);
-    setPromptModeButtonState(promptModeBtn, promptModeConfig.enabled);
-  } catch (error) {
-    promptModeConfig = previous;
-    setPromptModeButtonState(promptModeBtn, promptModeConfig.enabled);
-    console.error("Failed to toggle Prompt Mode:", error);
-  } finally {
-    promptModeBtn.disabled = false;
-    promptModeActionPending = false;
-  }
-}
-
 export async function initWidgetView(invoke, listen) {
   const setupEl = document.getElementById("setup");
   const widgetEl = document.getElementById("widget");
@@ -314,8 +277,6 @@ export async function initWidgetView(invoke, listen) {
   const waveformEl = document.getElementById("waveform");
   const stopBtn = document.getElementById("stop-btn");
   const cancelBtn = document.getElementById("cancel-btn");
-  const promptModeBtn = document.getElementById("prompt-mode-btn");
-
   setupEl.classList.add("hidden");
   widgetEl.classList.remove("hidden");
 
@@ -328,10 +289,6 @@ export async function initWidgetView(invoke, listen) {
   cancelBtn.addEventListener("click", () =>
     runWidgetAction(invoke, pill, waveformEl, stopBtn, cancelBtn, "cancel_recording"),
   );
-  if (promptModeBtn) {
-    promptModeBtn.addEventListener("click", () => togglePromptMode(invoke, promptModeBtn));
-  }
-
   await Promise.all([
     listen("audio_level", (event) => {
       renderLevel(event.payload || 0);
@@ -356,11 +313,9 @@ export async function initWidgetView(invoke, listen) {
   try {
     const config = await invoke("get_config");
     promptModeConfig = normalizePromptModeConfig(config?.prompt_mode);
-    setPromptModeButtonState(promptModeBtn, promptModeConfig.enabled);
   } catch (error) {
     console.error("Failed to load Prompt Mode config:", error);
     promptModeConfig = normalizePromptModeConfig();
-    setPromptModeButtonState(promptModeBtn, promptModeConfig.enabled);
   }
 
   try {
