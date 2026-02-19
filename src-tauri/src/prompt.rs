@@ -16,7 +16,24 @@ pub async fn structure_prompt(
     let provider = provider.trim().to_lowercase();
     match provider.as_str() {
         "anthropic" => structure_with_anthropic(transcript, model, api_key).await,
-        "openai" => structure_with_openai(transcript, model, api_key).await,
+        "openai" => {
+            structure_with_openai_compat(
+                transcript,
+                model,
+                api_key,
+                "https://api.openai.com/v1/chat/completions",
+            )
+            .await
+        }
+        "openrouter" => {
+            structure_with_openai_compat(
+                transcript,
+                model,
+                api_key,
+                "https://openrouter.ai/api/v1/chat/completions",
+            )
+            .await
+        }
         _ => Err(format!("unsupported prompt provider: {provider}")),
     }
 }
@@ -63,7 +80,12 @@ async fn structure_with_anthropic(
     extract_anthropic_text(&body)
 }
 
-async fn structure_with_openai(text: &str, model: &str, api_key: &str) -> Result<String, String> {
+async fn structure_with_openai_compat(
+    text: &str,
+    model: &str,
+    api_key: &str,
+    base_url: &str,
+) -> Result<String, String> {
     let body = json!({
         "model": model,
         "messages": [
@@ -80,7 +102,7 @@ async fn structure_with_openai(text: &str, model: &str, api_key: &str) -> Result
 
     let client = reqwest::Client::new();
     let response = client
-        .post("https://api.openai.com/v1/chat/completions")
+        .post(base_url)
         .header("authorization", format!("Bearer {}", api_key))
         .header("content-type", "application/json")
         .body(body.to_string())

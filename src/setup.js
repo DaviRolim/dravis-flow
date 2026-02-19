@@ -11,9 +11,11 @@ const MODEL_LABELS = {
 };
 const PROMPT_PROVIDER_ANTHROPIC = "anthropic";
 const PROMPT_PROVIDER_OPENAI = "openai";
+const PROMPT_PROVIDER_OPENROUTER = "openrouter";
 const PROMPT_MODEL_DEFAULTS = {
   [PROMPT_PROVIDER_ANTHROPIC]: "claude-haiku-4-5",
   [PROMPT_PROVIDER_OPENAI]: "gpt-4o-mini",
+  [PROMPT_PROVIDER_OPENROUTER]: "anthropic/claude-3.5-haiku",
 };
 
 let currentModel = "base.en";
@@ -150,9 +152,10 @@ async function addReplacement(invokeFn, replacementsListEl, errorEl, from, to) {
 }
 
 function normalizePromptProvider(provider) {
-  return String(provider || "").toLowerCase() === PROMPT_PROVIDER_OPENAI
-    ? PROMPT_PROVIDER_OPENAI
-    : PROMPT_PROVIDER_ANTHROPIC;
+  const p = String(provider || "").toLowerCase();
+  if (p === PROMPT_PROVIDER_OPENAI) return PROMPT_PROVIDER_OPENAI;
+  if (p === PROMPT_PROVIDER_OPENROUTER) return PROMPT_PROVIDER_OPENROUTER;
+  return PROMPT_PROVIDER_ANTHROPIC;
 }
 
 function normalizePromptModeConfig(config) {
