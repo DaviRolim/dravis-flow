@@ -111,7 +111,7 @@ pub async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
             inner.config.prompt_mode.enabled,
             inner.config.prompt_mode.provider.clone(),
             inner.config.prompt_mode.model.clone(),
-            inner.config.prompt_mode.api_key.clone(),
+            inner.config.prompt_mode.active_api_key().to_string(),
         ))
     })?;
 

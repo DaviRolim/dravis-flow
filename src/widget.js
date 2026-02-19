@@ -44,7 +44,9 @@ function normalizePromptModeConfig(config) {
     enabled: Boolean(config?.enabled),
     provider,
     model,
-    api_key: String(config?.api_key || ""),
+    anthropic_key: String(config?.anthropic_key || config?.api_key || ""),
+    openai_key: String(config?.openai_key || ""),
+    openrouter_key: String(config?.openrouter_key || ""),
   };
 }
 
@@ -62,7 +64,9 @@ let promptModeConfig = {
   enabled: false,
   provider: PROMPT_PROVIDER_ANTHROPIC,
   model: PROMPT_MODEL_DEFAULTS[PROMPT_PROVIDER_ANTHROPIC],
-  api_key: "",
+  anthropic_key: "",
+  openai_key: "",
+  openrouter_key: "",
 };
 
 function initBars(waveformEl) {

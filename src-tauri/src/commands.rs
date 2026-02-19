@@ -61,12 +61,18 @@ pub fn set_prompt_mode(
     } else {
         model.trim().to_string()
     };
+    let trimmed_key = api_key.trim().to_string();
 
     with_state(&state, |inner| {
         inner.config.prompt_mode.enabled = enabled;
         inner.config.prompt_mode.provider = normalized_provider.clone();
         inner.config.prompt_mode.model = normalized_model.clone();
-        inner.config.prompt_mode.api_key = api_key.trim().to_string();
+        // Save key to the per-provider field
+        match normalized_provider.as_str() {
+            "openai" => inner.config.prompt_mode.openai_key = trimmed_key,
+            "openrouter" => inner.config.prompt_mode.openrouter_key = trimmed_key,
+            _ => inner.config.prompt_mode.anthropic_key = trimmed_key,
+        }
         save_config(&inner.config)?;
         Ok(inner.config.clone())
     })

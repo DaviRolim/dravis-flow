@@ -593,8 +593,18 @@ body.view-widget::after {
 }
 
 .recording-pill.structuring {
-  box-shadow: 0 6px 16px rgba(2, 2, 6, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 0 0 2px rgba(0, 229, 255, 0.24), 0 0 14px rgba(0, 229, 255, 0.2);
+  animation: structuring-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes structuring-glow {
+  0%, 100% {
+    box-shadow: 0 6px 16px rgba(2, 2, 6, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.08),
+      0 0 0 2px rgba(180, 80, 255, 0.3), 0 0 12px rgba(180, 80, 255, 0.15);
+  }
+  50% {
+    box-shadow: 0 6px 16px rgba(2, 2, 6, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.08),
+      0 0 0 3px rgba(180, 80, 255, 0.5), 0 0 24px rgba(180, 80, 255, 0.35);
+  }
 }
 
 .recording-pill.error {

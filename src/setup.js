@@ -17,6 +17,11 @@ const PROMPT_MODEL_DEFAULTS = {
   [PROMPT_PROVIDER_OPENAI]: "gpt-4o-mini",
   [PROMPT_PROVIDER_OPENROUTER]: "anthropic/claude-3.5-haiku",
 };
+const PROVIDER_KEY_FIELDS = {
+  [PROMPT_PROVIDER_ANTHROPIC]: "anthropic_key",
+  [PROMPT_PROVIDER_OPENAI]: "openai_key",
+  [PROMPT_PROVIDER_OPENROUTER]: "openrouter_key",
+};
 
 let currentModel = "base.en";
 let vocabWords = [];
@@ -166,8 +171,15 @@ function normalizePromptModeConfig(config) {
     enabled: Boolean(config?.enabled),
     provider,
     model,
-    api_key: String(config?.api_key || ""),
+    anthropic_key: String(config?.anthropic_key || config?.api_key || ""),
+    openai_key: String(config?.openai_key || ""),
+    openrouter_key: String(config?.openrouter_key || ""),
   };
+}
+
+function activeApiKey(cfg) {
+  const field = PROVIDER_KEY_FIELDS[cfg.provider] || "anthropic_key";
+  return cfg[field] || "";
 }
 
 function applyPromptModeUI(
@@ -187,7 +199,7 @@ function applyPromptModeUI(
   });
 
   if (promptApiKeyEl) {
-    promptApiKeyEl.value = promptModeConfig.api_key;
+    promptApiKeyEl.value = activeApiKey(promptModeConfig);
   }
 
   if (promptApiVisibilityBtnEl) {
@@ -214,14 +226,13 @@ async function savePromptMode(invokeFn) {
       String(promptModeConfig.model || "").trim() ||
       PROMPT_MODEL_DEFAULTS[provider] ||
       PROMPT_MODEL_DEFAULTS[PROMPT_PROVIDER_ANTHROPIC],
-    api_key: String(promptModeConfig.api_key || "").trim(),
   };
 
   const config = await invokeFn("set_prompt_mode", {
     enabled: promptModeConfig.enabled,
     provider: promptModeConfig.provider,
     model: promptModeConfig.model,
-    apiKey: promptModeConfig.api_key,
+    apiKey: activeApiKey(promptModeConfig),
   });
 
   promptModeConfig = normalizePromptModeConfig(config?.prompt_mode || promptModeConfig);
@@ -413,7 +424,8 @@ export async function initSetupView(invokeFn, listen) {
         promptApiKeyEl,
         promptApiVisibilityBtnEl,
         () => {
-          promptModeConfig.api_key = promptApiKeyEl.value;
+          const field = PROVIDER_KEY_FIELDS[promptModeConfig.provider] || "anthropic_key";
+          promptModeConfig[field] = promptApiKeyEl.value;
         },
       ),
     );

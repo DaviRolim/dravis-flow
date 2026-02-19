@@ -7,8 +7,10 @@ pub const MODEL_SMALL_EN: &str = "small.en";
 pub const MODEL_LARGE_V3_TURBO: &str = "large-v3-turbo";
 pub const PROMPT_PROVIDER_ANTHROPIC: &str = "anthropic";
 pub const PROMPT_PROVIDER_OPENAI: &str = "openai";
+pub const PROMPT_PROVIDER_OPENROUTER: &str = "openrouter";
 pub const PROMPT_MODEL_ANTHROPIC_DEFAULT: &str = "claude-haiku-4-5";
 pub const PROMPT_MODEL_OPENAI_DEFAULT: &str = "gpt-4o-mini";
+pub const PROMPT_MODEL_OPENROUTER_DEFAULT: &str = "anthropic/claude-3.5-haiku";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
@@ -33,7 +35,15 @@ pub struct PromptModeConfig {
     pub enabled: bool,
     pub provider: String,
     pub model: String,
+    /// Kept for backward compat with old config files — migrated on load
+    #[serde(default)]
     pub api_key: String,
+    #[serde(default)]
+    pub anthropic_key: String,
+    #[serde(default)]
+    pub openai_key: String,
+    #[serde(default)]
+    pub openrouter_key: String,
 }
 
 impl Default for PromptModeConfig {
@@ -43,7 +53,23 @@ impl Default for PromptModeConfig {
             provider: PROMPT_PROVIDER_ANTHROPIC.to_string(),
             model: PROMPT_MODEL_ANTHROPIC_DEFAULT.to_string(),
             api_key: String::new(),
+            anthropic_key: String::new(),
+            openai_key: String::new(),
+            openrouter_key: String::new(),
         }
+    }
+}
+
+impl PromptModeConfig {
+    /// Get the API key for the currently selected provider.
+    pub fn active_api_key(&self) -> &str {
+        let key = match normalized_prompt_provider(&self.provider) {
+            PROMPT_PROVIDER_OPENAI => &self.openai_key,
+            PROMPT_PROVIDER_OPENROUTER => &self.openrouter_key,
+            _ => &self.anthropic_key,
+        };
+        // Fallback to legacy api_key if per-provider key is empty
+        if key.is_empty() { &self.api_key } else { key }
     }
 }
 
@@ -217,8 +243,11 @@ pub fn model_download_url(model_name: &str) -> &'static str {
 }
 
 pub fn normalized_prompt_provider(provider: &str) -> &'static str {
-    if provider.trim().eq_ignore_ascii_case(PROMPT_PROVIDER_OPENAI) {
+    let p = provider.trim().to_lowercase();
+    if p == PROMPT_PROVIDER_OPENAI {
         PROMPT_PROVIDER_OPENAI
+    } else if p == PROMPT_PROVIDER_OPENROUTER {
+        PROMPT_PROVIDER_OPENROUTER
     } else {
         PROMPT_PROVIDER_ANTHROPIC
     }
@@ -227,6 +256,7 @@ pub fn normalized_prompt_provider(provider: &str) -> &'static str {
 pub fn default_prompt_model(provider: &str) -> &'static str {
     match normalized_prompt_provider(provider) {
         PROMPT_PROVIDER_OPENAI => PROMPT_MODEL_OPENAI_DEFAULT,
+        PROMPT_PROVIDER_OPENROUTER => PROMPT_MODEL_OPENROUTER_DEFAULT,
         _ => PROMPT_MODEL_ANTHROPIC_DEFAULT,
     }
 }
