@@ -9,8 +9,9 @@ use audio::AudioRecorder;
 use config::{load_or_create_config, model_download_url, model_file_path, save_config, AppConfig};
 use serde::Serialize;
 use std::fs::{self, File};
-use std::io::{Read, Write};
-use std::sync::Mutex;
+use std::io::{BufWriter, Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -19,10 +20,69 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use whisper::WhisperEngine;
 use whisper_rs::WhisperContext;
 
+// ── File-based logging ──────────────────────────────────────────────────
+
+static LOG_FILE: OnceLock<Mutex<BufWriter<File>>> = OnceLock::new();
+static APP_START: OnceLock<std::time::Instant> = OnceLock::new();
+
+fn init_logging() {
+    APP_START.get_or_init(std::time::Instant::now);
+    let log_dir = config::config_dir();
+    let _ = fs::create_dir_all(&log_dir);
+    let log_path = log_dir.join("dravis-flow.log");
+    if let Ok(file) = File::create(&log_path) {
+        let _ = LOG_FILE.set(Mutex::new(BufWriter::new(file)));
+        eprintln!("logging to {}", log_path.display());
+    }
+}
+
+pub(crate) fn write_log(msg: &str) {
+    let elapsed = APP_START
+        .get()
+        .map(|t| t.elapsed().as_secs_f64())
+        .unwrap_or(0.0);
+    if let Some(writer) = LOG_FILE.get() {
+        if let Ok(mut w) = writer.lock() {
+            let _ = writeln!(w, "[{elapsed:>8.3}s] {msg}");
+            let _ = w.flush();
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! dlog {
+    ($($arg:tt)*) => {{
+        let msg = format!($($arg)*);
+        eprintln!("{}", msg);
+        $crate::write_log(&msg);
+    }};
+}
+
 // MODEL_URL removed — now driven by config::model_download_url()
 const MIN_TRANSCRIBE_SAMPLES: usize = 16_000; // ~1s at 16 kHz
 const MODE_HOLD: &str = "hold";
 const MODE_TOGGLE: &str = "toggle";
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+#[allow(dead_code)] // Error variant is used via as_str() for widget state
+enum AppStatus {
+    Idle,
+    Recording,
+    Processing,
+    Error,
+}
+
+impl AppStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Recording => "recording",
+            Self::Processing => "processing",
+            Self::Error => "error",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 struct StatusPayload {
@@ -45,15 +105,24 @@ unsafe impl Send for SendWhisperCtx {}
 struct AppState {
     inner_state: Mutex<InnerState>,
     whisper_ctx: Mutex<Option<SendWhisperCtx>>,
+    model_ready: Arc<AtomicBool>,
 }
 
 struct InnerState {
-    status: String,
+    status: AppStatus,
     recorder: AudioRecorder,
     config: AppConfig,
     toggle_shortcut_held: bool,
     press_instant: Option<std::time::Instant>,
     toggle_active: bool,
+}
+
+impl InnerState {
+    fn reset_to_idle(&mut self) {
+        self.status = AppStatus::Idle;
+        self.toggle_active = false;
+        self.press_instant = None;
+    }
 }
 
 impl AppState {
@@ -63,7 +132,7 @@ impl AppState {
 
         Self {
             inner_state: Mutex::new(InnerState {
-                status: "idle".to_string(),
+                status: AppStatus::Idle,
                 recorder: AudioRecorder::new(),
                 config,
                 toggle_shortcut_held: false,
@@ -71,6 +140,7 @@ impl AppState {
                 toggle_active: false,
             }),
             whisper_ctx: Mutex::new(None),
+            model_ready: Arc::new(AtomicBool::new(true)),
         }
     }
 }
@@ -153,18 +223,22 @@ fn with_state<T>(
 async fn start_recording_inner(app: AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
 
+    if !state.model_ready.load(Ordering::SeqCst) {
+        return Err("Model is still loading, please wait...".to_string());
+    }
+
     let language = with_state(&state, |inner| {
-        if inner.status != "idle" {
+        if inner.status != AppStatus::Idle {
             return Ok(None);
         }
 
         let model_exists = WhisperEngine::new(&inner.config).model_exists();
         if !model_exists {
-            inner.status = "idle".to_string();
+            inner.reset_to_idle();
             return Err("Whisper model is missing. Download model first.".to_string());
         }
 
-        inner.status = "recording".to_string();
+        inner.status = AppStatus::Recording;
         Ok(Some(inner.config.general.language.clone()))
     })?;
 
@@ -188,14 +262,12 @@ async fn cancel_recording_inner(app: AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
 
     with_state(&state, |inner| {
-        if inner.status != "recording" {
+        if inner.status != AppStatus::Recording {
             return Ok(());
         }
 
         let _ = inner.recorder.stop();
-        inner.status = "idle".to_string();
-        inner.toggle_active = false;
-        inner.press_instant = None;
+        inner.reset_to_idle();
         Ok(())
     })?;
 
@@ -207,11 +279,11 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
     let state = app.state::<AppState>();
 
     let (audio, language, formatting_level, model_path_str) = with_state(&state, |inner| {
-        if inner.status != "recording" {
+        if inner.status != AppStatus::Recording {
             return Ok((Vec::new(), String::new(), String::new(), String::new()));
         }
 
-        inner.status = "processing".to_string();
+        inner.status = AppStatus::Processing;
         let samples = inner.recorder.stop()?;
         let model_path = model_file_path(&inner.config)
             .to_str()
@@ -228,23 +300,19 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
     if audio.is_empty() {
         set_widget_state(&app, "idle", None);
         with_state(&state, |inner| {
-            inner.status = "idle".to_string();
-            inner.toggle_active = false;
-            inner.press_instant = None;
+            inner.reset_to_idle();
             Ok(())
         })?;
         return Ok(String::new());
     }
 
     if audio.len() < MIN_TRANSCRIBE_SAMPLES {
-        eprintln!(
+        dlog!(
             "recording too short ({} samples); skipping transcription",
             audio.len()
         );
         with_state(&state, |inner| {
-            inner.status = "idle".to_string();
-            inner.toggle_active = false;
-            inner.press_instant = None;
+            inner.reset_to_idle();
             Ok(())
         })?;
         set_widget_state(&app, "idle", None);
@@ -252,7 +320,7 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
     }
 
     set_widget_state(&app, "processing", Some("Transcribing...".to_string()));
-    eprintln!("pipeline: transcribing {} samples", audio.len());
+    dlog!("pipeline: transcribing {} samples", audio.len());
 
     let app_clone = app.clone();
     let raw_text = tauri::async_runtime::spawn_blocking(move || {
@@ -263,17 +331,17 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
             .map_err(|_| "whisper ctx lock poisoned".to_string())?;
 
         if ctx_lock.is_none() {
-            eprintln!("pipeline: loading whisper model (first run)");
+            dlog!("pipeline: loading whisper model (first run)");
             let ctx = whisper::load_context(&model_path_str)?;
             *ctx_lock = Some(SendWhisperCtx(ctx));
-            eprintln!("pipeline: whisper model loaded and cached");
+            dlog!("pipeline: whisper model loaded and cached");
         }
 
         whisper::transcribe_with_ctx(&ctx_lock.as_ref().unwrap().0, &audio, &language)
     })
     .await
     .map_err(|e| format!("transcription task failed: {e}"))??;
-    eprintln!("pipeline: transcription done, raw len={}", raw_text.len());
+    dlog!("pipeline: transcription done, raw len={}", raw_text.len());
 
     let formatted = if formatting_level == "basic" {
         formatter::format_text(&raw_text)
@@ -282,30 +350,35 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
     };
 
     if formatted.trim().is_empty() {
-        eprintln!("empty transcript; skipping paste");
+        dlog!("empty transcript; skipping paste");
         with_state(&state, |inner| {
-            inner.status = "idle".to_string();
-            inner.toggle_active = false;
-            inner.press_instant = None;
+            inner.reset_to_idle();
             Ok(())
         })?;
         set_widget_state(&app, "idle", None);
         return Ok(String::new());
     }
 
-    eprintln!("pipeline: injecting text len={}", formatted.len());
+    // Hide the widget BEFORE pasting so the target app regains focus.
+    // Without this, Cmd+V goes to the widget window (which has focus if
+    // the user clicked its stop button) instead of the intended app.
+    if let Some(widget) = app.get_webview_window("widget") {
+        let _ = widget.hide();
+    }
+    // Give the target app time to regain focus after the widget hides
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    dlog!("pipeline: injecting text len={}", formatted.len());
     tauri::async_runtime::spawn_blocking({
         let text = formatted.clone();
         move || injector::paste_text(&text)
     })
     .await
     .map_err(|e| format!("injector task failed: {e}"))??;
-    eprintln!("pipeline: injection done");
+    dlog!("pipeline: injection done");
 
     with_state(&state, |inner| {
-        inner.status = "idle".to_string();
-        inner.toggle_active = false;
-        inner.press_instant = None;
+        inner.reset_to_idle();
         Ok(())
     })?;
 
@@ -330,7 +403,7 @@ async fn cancel_recording(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn get_status(state: State<AppState>) -> Result<String, String> {
-    with_state(&state, |inner| Ok(inner.status.clone()))
+    with_state(&state, |inner| Ok(inner.status.as_str().to_string()))
 }
 
 #[tauri::command]
@@ -390,27 +463,17 @@ fn check_model(state: State<AppState>) -> Result<ModelStatus, String> {
     })
 }
 
-#[tauri::command]
-async fn download_model(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let (model_path, model_name) = with_state(&state, |inner| {
-        Ok((
-            model_file_path(&inner.config),
-            inner.config.model.name.clone(),
-        ))
-    })?;
-
-    if model_path.exists() {
-        return Ok(());
-    }
-
+async fn run_model_download(
+    app: AppHandle,
+    model_path: std::path::PathBuf,
+    model_name: String,
+) -> Result<(), String> {
     if let Some(parent) = model_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create model directory {}: {e}", parent.display()))?;
     }
 
     let url = model_download_url(&model_name);
-    let model_path_clone = model_path.clone();
-    let app_clone = app.clone();
 
     tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
         let mut response = reqwest::blocking::get(url)
@@ -424,10 +487,10 @@ async fn download_model(app: AppHandle, state: State<'_, AppState>) -> Result<()
         }
 
         let total = response.content_length().unwrap_or(0);
-        let mut file = File::create(&model_path_clone).map_err(|e| {
+        let mut file = File::create(&model_path).map_err(|e| {
             format!(
                 "failed creating model file {}: {e}",
-                model_path_clone.display()
+                model_path.display()
             )
         })?;
 
@@ -448,17 +511,33 @@ async fn download_model(app: AppHandle, state: State<'_, AppState>) -> Result<()
             downloaded += read as u64;
             if total > 0 {
                 let progress = (downloaded as f64 / total as f64).clamp(0.0, 1.0);
-                let _ = app_clone.emit("model_download_progress", progress);
+                let _ = app.emit("model_download_progress", progress);
             }
         }
 
-        let _ = app_clone.emit("model_download_progress", 1.0_f64);
+        let _ = app.emit("model_download_progress", 1.0_f64);
         Ok(())
     })
     .await
     .map_err(|e| format!("download task failed: {e}"))??;
 
     Ok(())
+}
+
+#[tauri::command]
+async fn download_model(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let (model_path, model_name) = with_state(&state, |inner| {
+        Ok((
+            model_file_path(&inner.config),
+            inner.config.model.name.clone(),
+        ))
+    })?;
+
+    if model_path.exists() {
+        return Ok(());
+    }
+
+    run_model_download(app, model_path, model_name).await
 }
 
 fn build_tray(app: &AppHandle) -> Result<(), String> {
@@ -535,7 +614,7 @@ fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
         };
 
         // Clean up stale toggle state if recording ended externally (e.g. stop button).
-        if lock.toggle_active && lock.status != "recording" {
+        if lock.toggle_active && lock.status != AppStatus::Recording {
             lock.toggle_active = false;
             lock.press_instant = None;
         }
@@ -551,7 +630,7 @@ fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
                         // We're in toggle mode — stop on this press.
                         lock.toggle_active = false;
                         Some(ShortcutAction::Stop)
-                    } else if lock.status == "idle" {
+                    } else if lock.status == AppStatus::Idle {
                         lock.press_instant = Some(std::time::Instant::now());
                         Some(ShortcutAction::Start)
                     } else {
@@ -561,7 +640,7 @@ fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
             }
             ShortcutState::Released => {
                 lock.toggle_shortcut_held = false;
-                if lock.status == "recording" && !lock.toggle_active {
+                if lock.status == AppStatus::Recording && !lock.toggle_active {
                     let held_ms = lock
                         .press_instant
                         .map(|t| t.elapsed().as_millis())
@@ -599,13 +678,11 @@ fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
         };
 
         if let Err(err) = out {
-            eprintln!("shortcut pipeline failed: {err}");
+            dlog!("shortcut pipeline failed: {err}");
             set_widget_state(&app_clone, "error", Some(err.clone()));
             if let Ok(mut lock) = app_clone.state::<AppState>().inner_state.lock() {
-                lock.status = "idle".to_string();
+                lock.reset_to_idle();
                 lock.toggle_shortcut_held = false;
-                lock.toggle_active = false;
-                lock.press_instant = None;
                 let _ = lock.recorder.stop();
             };
         }
@@ -615,7 +692,7 @@ fn handle_shortcut_event(app: &AppHandle, state: ShortcutState) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = load_or_create_config().unwrap_or_else(|e| {
-        eprintln!("Config load failed, using defaults: {e}");
+        dlog!("Config load failed, using defaults: {e}");
         AppConfig::default()
     });
 
@@ -644,7 +721,16 @@ pub fn run() {
             download_model
         ])
         .setup(move |app| {
+            init_logging();
             build_tray(app.handle())?;
+
+            // Prompt for Accessibility permission on first launch so CGEvent paste works.
+            // On subsequent launches where permission is already granted this is a no-op.
+            #[cfg(target_os = "macos")]
+            {
+                injector::request_accessibility_permission();
+                dlog!("startup: accessibility trusted = {}", injector::is_accessibility_trusted());
+            }
 
             let shortcut_str = hotkey::config_combo_to_shortcut(&hotkey_combo)
                 .map_err(|e| format!("invalid hotkey config: {e}"))?;
@@ -670,8 +756,11 @@ pub fn run() {
             if needs_model {
                 show_main_window(app.handle());
             } else {
-                // Pre-load WhisperContext in background so first recording is instant
+                // Pre-load WhisperContext in background so first recording is instant.
+                // Block recording until pre-load finishes to avoid 30s mutex contention.
+                state.model_ready.store(false, Ordering::SeqCst);
                 let app_handle = app.handle().clone();
+                let model_ready = state.model_ready.clone();
                 tauri::async_runtime::spawn_blocking(move || {
                     let state = app_handle.state::<AppState>();
                     let model_path = {
@@ -679,16 +768,24 @@ pub fn run() {
                         inner.map(|s| model_file_path(&s.config).display().to_string())
                     };
                     if let Some(path) = model_path {
-                        eprintln!("startup: pre-loading whisper model from {path}");
+                        dlog!("startup: pre-loading whisper model from {path}");
                         match whisper::load_context(&path) {
                             Ok(ctx) => {
                                 if let Ok(mut lock) = state.whisper_ctx.lock() {
                                     *lock = Some(SendWhisperCtx(ctx));
-                                    eprintln!("startup: whisper model pre-loaded and cached");
+                                    dlog!("startup: whisper model pre-loaded and cached");
                                 }
+                                model_ready.store(true, Ordering::SeqCst);
+                                let _ = app_handle.emit("model_ready", ());
                             }
-                            Err(e) => eprintln!("startup: failed to pre-load model: {e}"),
+                            Err(e) => {
+                                dlog!("startup: failed to pre-load model: {e}");
+                                // Allow recording to try loading inline
+                                model_ready.store(true, Ordering::SeqCst);
+                            }
                         }
+                    } else {
+                        model_ready.store(true, Ordering::SeqCst);
                     }
                 });
             }
@@ -699,10 +796,10 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { code, .. } = &event {
-                eprintln!("run event: exit requested (code: {:?})", code);
+                dlog!("run event: exit requested (code: {:?})", code);
             }
             if let tauri::RunEvent::Exit = event {
-                eprintln!("run event: exit");
+                dlog!("run event: exit");
             }
 
             #[cfg(target_os = "macos")]

@@ -25,10 +25,8 @@ const downloadBtn = document.getElementById("download-btn");
 const progressWrap = document.getElementById("progress-wrap");
 const progressEl = document.getElementById("progress");
 const progressTextEl = document.getElementById("progress-text");
-const modeStatusEl = document.getElementById("mode-status");
 const modelStatusEl = document.getElementById("model-status");
 const hotkeyHintEl = document.getElementById("hotkey-hint");
-const modeButtons = Array.from(document.querySelectorAll("#mode-switch .mode-btn"));
 
 const pill = document.getElementById("recording-pill");
 const waveformEl = document.getElementById("waveform");
@@ -36,20 +34,20 @@ const stopBtn = document.getElementById("stop-btn");
 const cancelBtn = document.getElementById("cancel-btn");
 
 let bars = [];
-let currentMode = "hold";
 let widgetActionPending = false;
 let waveformState = "idle";
-const BAR_COUNT = 24;
-const BAR_MIN_SCALE = 0.08;
+let isToggleMode = false;
+const BAR_COUNT = 16;
+const BAR_MIN_SCALE = 0.10;
 const BAR_MAX_SCALE = 1.0;
 const BAR_VARIATION_RANGE = 0.25;
 const BAR_VARIATION_RETARGET_MIN_MS = 40;
 const BAR_VARIATION_RETARGET_MAX_MS = 140;
 const BAR_GAUSSIAN_SIGMA = 0.38;
-const BAR_AMBIENT_BREATH = 0.06;
-// RMS from mic is typically 0.01-0.15 — amplify to fill 0-1 range
-const LEVEL_GAIN = 8.0;
-const LEVEL_EXPONENT = 0.6; // compress dynamic range (sqrt-ish)
+const BAR_AMBIENT_BREATH = 0.008;
+// RMS from mic is typically 0.01-0.15 — amplify aggressively so speech fills bars
+const LEVEL_GAIN = 14.0;
+const LEVEL_EXPONENT = 0.45; // heavy compression — even moderate speech pushes bars high
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -59,80 +57,6 @@ function randomBetween(min, max) {
   return min + Math.random() * (max - min);
 }
 
-function normalizeMode(mode) {
-  return mode === "toggle" ? "toggle" : "hold";
-}
-
-function isToggleRecordingMode() {
-  return normalizeMode(currentMode) === "toggle";
-}
-
-function applyWidgetModeUI(mode) {
-  const normalized = normalizeMode(mode);
-  const showActionButtons = normalized === "toggle";
-
-  pill.classList.toggle("toggle-mode", showActionButtons);
-  pill.classList.toggle("hold-mode", !showActionButtons);
-  stopBtn.tabIndex = showActionButtons ? 0 : -1;
-  cancelBtn.tabIndex = showActionButtons ? 0 : -1;
-
-  if (!showActionButtons) {
-    setWidgetButtonsEnabled(false);
-  }
-}
-
-async function loadWidgetMode() {
-  try {
-    const config = await invoke("get_config");
-    currentMode = normalizeMode(config?.general?.mode || currentMode);
-  } catch (error) {
-    currentMode = normalizeMode(currentMode);
-  }
-
-  applyWidgetModeUI(currentMode);
-}
-
-function applyModeUI(mode, saved = true) {
-  const normalized = normalizeMode(mode);
-  const toggleMessage =
-    normalized === "toggle"
-      ? "Recording mode: Toggle recording. Press hotkey once to start, once to stop."
-      : "Recording mode: Hold to talk. Hold hotkey to record, release to stop.";
-
-  modeStatusEl.textContent = saved ? toggleMessage : "Saving recording mode...";
-  hotkeyHintEl.textContent =
-    normalized === "toggle"
-      ? "Hotkey: Ctrl+Shift+Space (toggle on/off)"
-      : "Hotkey: Ctrl+Shift+Space (hold to record)";
-
-  modeButtons.forEach((button) => {
-    const isActive = button.dataset.mode === normalized;
-    button.classList.toggle("active", isActive);
-    button.setAttribute("aria-checked", String(isActive));
-  });
-
-  applyWidgetModeUI(normalized);
-}
-
-async function saveMode(nextMode) {
-  const normalized = normalizeMode(nextMode);
-  if (normalized === currentMode) {
-    return;
-  }
-
-  const previousMode = currentMode;
-  currentMode = normalized;
-  applyModeUI(currentMode, false);
-
-  try {
-    await invoke("set_recording_mode", { mode: currentMode });
-    applyModeUI(currentMode, true);
-  } catch (error) {
-    currentMode = previousMode;
-    applyModeUI(currentMode, true);
-    modeStatusEl.textContent = `Could not save mode: ${error}`;
-  }
-}
 
 const MODEL_SIZES = {
   "base.en": "142 MB",
@@ -191,44 +115,44 @@ async function saveModel(modelName) {
 async function loadConfig() {
   try {
     const config = await invoke("get_config");
-    currentMode = normalizeMode(config?.general?.mode || "hold");
     currentModel = config?.model?.name || "base.en";
   } catch (error) {
-    currentMode = "hold";
-    modeStatusEl.textContent = `Config load failed: ${error}`;
+    // ignore — applyModelUI will use the default
   }
 
   applyModelUI(currentModel, true);
-  applyModeUI(currentMode, true);
 }
 
 function initBars() {
   waveformEl.innerHTML = "";
-  bars = Array.from({ length: BAR_COUNT }, () => {
-    const bar = document.createElement("span");
-    bar.className = "bar";
-    waveformEl.appendChild(bar);
-    return bar;
-  });
+  bars = [];
+  barStates = [];
 
-  const midpoint = (bars.length - 1) / 2 || 1;
-  barWeights = bars.map((_, index) => {
-    const normalizedOffset = (index - midpoint) / midpoint;
+  const midpoint = (BAR_COUNT - 1) / 2 || 1;
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const el = document.createElement("span");
+    el.className = "bar";
+    waveformEl.appendChild(el);
+    bars.push(el);
+
+    const normalizedOffset = (i - midpoint) / midpoint;
     const gaussian = Math.exp(
       -(normalizedOffset * normalizedOffset) / (2 * BAR_GAUSSIAN_SIGMA * BAR_GAUSSIAN_SIGMA),
     );
-    return 0.18 + gaussian * 0.82;
-  });
-  barResponseRates = bars.map(() => randomBetween(0.35, 0.55));
-  barPhaseOffsets = bars.map((_, index) => index * 0.24 + randomBetween(-0.2, 0.2));
-  barVariationTargets = bars.map(() => 1);
-  barVariations = bars.map(() => 1);
-  barVariationTimers = bars.map(() => randomBetween(0, BAR_VARIATION_RETARGET_MAX_MS));
-  barScales = Array.from({ length: bars.length }, () => BAR_MIN_SCALE);
-  bars.forEach((bar) => {
-    bar.style.setProperty("--bar-energy", "0");
-    bar.style.transform = `scaleY(${BAR_MIN_SCALE})`;
-  });
+
+    barStates.push({
+      scale: BAR_MIN_SCALE,
+      weight: 0.18 + gaussian * 0.82,
+      responseRate: randomBetween(0.35, 0.55),
+      phaseOffset: i * 0.24 + randomBetween(-0.2, 0.2),
+      variation: 1,
+      variationTarget: 1,
+      variationTimer: randomBetween(0, BAR_VARIATION_RETARGET_MAX_MS),
+    });
+
+    el.style.setProperty("--bar-energy", "0");
+    el.style.transform = `scaleY(${BAR_MIN_SCALE})`;
+  }
 }
 
 function resetBars() {
@@ -237,7 +161,7 @@ function resetBars() {
   lastWaveformTimestamp = 0;
   waveformEl.style.setProperty("--waveform-level", "0");
   bars.forEach((bar, index) => {
-    barScales[index] = BAR_MIN_SCALE;
+    if (barStates[index]) barStates[index].scale = BAR_MIN_SCALE;
     bar.style.transform = `scaleY(${BAR_MIN_SCALE})`;
     bar.style.setProperty("--bar-energy", "0");
   });
@@ -245,13 +169,7 @@ function resetBars() {
 
 let pendingLevel = 0;
 let smoothedLevel = 0;
-let barScales = [];
-let barWeights = [];
-let barResponseRates = [];
-let barPhaseOffsets = [];
-let barVariations = [];
-let barVariationTargets = [];
-let barVariationTimers = [];
+let barStates = [];
 let waveformAnimationFrame = 0;
 let lastWaveformTimestamp = 0;
 
@@ -268,8 +186,8 @@ function animateWaveform(timestamp) {
   const seconds = timestamp * 0.001;
 
   const inputTarget = waveformState === "recording" ? pendingLevel : 0;
-  // Faster attack, slower decay for punchy response
-  const attackRate = inputTarget > smoothedLevel ? 0.55 : 0.18;
+  // Snappy attack, fast decay — bars collapse quickly when voice stops
+  const attackRate = inputTarget > smoothedLevel ? 0.6 : 0.10;
   smoothedLevel += (inputTarget - smoothedLevel) * attackRate;
   const normalizedLevel = clamp(smoothedLevel, 0, 1);
 
@@ -282,47 +200,40 @@ function animateWaveform(timestamp) {
   waveformEl.style.setProperty("--waveform-level", String(clamp(glowLevel, 0, 1)));
 
   bars.forEach((bar, index) => {
-    barVariationTimers[index] -= deltaMs;
-    if (barVariationTimers[index] <= 0) {
-      barVariationTargets[index] = 1 + randomBetween(-BAR_VARIATION_RANGE, BAR_VARIATION_RANGE);
-      barVariationTimers[index] = randomBetween(
+    const state = barStates[index];
+
+    state.variationTimer -= deltaMs;
+    if (state.variationTimer <= 0) {
+      state.variationTarget = 1 + randomBetween(-BAR_VARIATION_RANGE, BAR_VARIATION_RANGE);
+      state.variationTimer = randomBetween(
         BAR_VARIATION_RETARGET_MIN_MS,
         BAR_VARIATION_RETARGET_MAX_MS,
       );
     }
 
-    const currentVariation = barVariations[index] ?? 1;
-    const targetVariation = barVariationTargets[index] ?? 1;
-    const nextVariation = currentVariation + (targetVariation - currentVariation) * 0.22;
-    barVariations[index] = nextVariation;
+    state.variation += (state.variationTarget - state.variation) * 0.22;
 
-    const weight = barWeights[index] ?? 0.2;
-    const phase = barPhaseOffsets[index] ?? 0;
-    const ambientWave = Math.sin(seconds * 1.7 + phase) * 0.5 + 0.5;
-    const ambientLift = ambientWave * BAR_AMBIENT_BREATH * weight;
+    const ambientWave = Math.sin(seconds * 1.7 + state.phaseOffset) * 0.5 + 0.5;
+    const ambientLift = ambientWave * BAR_AMBIENT_BREATH * state.weight;
 
     let lift = 0;
     if (waveformState === "recording") {
-      // Bars should really move — weight shapes the gaussian, level drives amplitude
-      const dynamicLift = normalizedLevel * (0.3 + weight * 0.7);
-      // When quiet, keep subtle ambient motion; when loud, go full
-      const quietBlend = normalizedLevel < 0.05 ? 1.0 : 0.15;
+      const dynamicLift = normalizedLevel * (0.3 + state.weight * 0.7);
+      // When quiet, almost no ambient movement — bars stay flat
+      const quietBlend = normalizedLevel < 0.05 ? 0.15 : 0.05;
       lift = dynamicLift + ambientLift * quietBlend;
     } else if (waveformState === "processing") {
-      // Gentle synchronized pulse — all bars breathe together, fading down
       const pulse = Math.sin(seconds * 2.4) * 0.5 + 0.5;
-      lift = pulse * 0.12 * weight;
+      lift = pulse * 0.12 * state.weight;
     } else {
       lift = ambientLift * 0.5;
     }
 
-    const variedLift = lift * nextVariation;
+    const variedLift = lift * state.variation;
     const targetScale = clamp(BAR_MIN_SCALE + variedLift, BAR_MIN_SCALE, BAR_MAX_SCALE);
-    const previousScale = barScales[index] ?? BAR_MIN_SCALE;
-    const responseRate = barResponseRates[index] ?? 0.34;
-    const nextScale = previousScale + (targetScale - previousScale) * responseRate;
+    const nextScale = state.scale + (targetScale - state.scale) * state.responseRate;
 
-    barScales[index] = nextScale;
+    state.scale = nextScale;
     bar.style.transform = `scaleY(${nextScale.toFixed(4)})`;
 
     const barEnergy = clamp((nextScale - BAR_MIN_SCALE) / (BAR_MAX_SCALE - BAR_MIN_SCALE), 0, 1);
@@ -360,13 +271,20 @@ function setWidgetStatus(status, message = "") {
 
   if (nextStatus === "recording") {
     waveformState = "recording";
-    setWidgetButtonsEnabled(isToggleRecordingMode());
+    // Don't override toggle mode — the toggle_mode_active event may have
+    // already switched us to toggle mode before this status event arrives.
+    if (!isToggleMode) {
+      pill.classList.remove("toggle-mode");
+      pill.classList.add("hold-mode");
+      setWidgetButtonsEnabled(false);
+    }
     pill.classList.add("visible");
     startWaveformAnimation();
     return;
   }
 
   if (nextStatus === "processing") {
+    isToggleMode = false;
     waveformState = "processing";
     pendingLevel = 0;
     setWidgetButtonsEnabled(false);
@@ -385,10 +303,11 @@ function setWidgetStatus(status, message = "") {
     pill.classList.add("error", "visible");
     window.setTimeout(() => {
       pill.classList.remove("visible", "processing", "error");
-    }, 1200);
+    }, 3000);
     return;
   }
 
+  isToggleMode = false;
   waveformState = "idle";
   setWidgetButtonsEnabled(false);
   stopWaveformAnimation();
@@ -404,12 +323,6 @@ async function initSetupView() {
     loadConfig(),
     invoke("check_model").catch((error) => ({ error })),
   ]);
-
-  modeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      saveMode(button.dataset.mode || "hold");
-    });
-  });
 
   modelButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -451,10 +364,6 @@ async function initSetupView() {
 }
 
 async function runWidgetAction(commandName) {
-  if (!isToggleRecordingMode()) {
-    return;
-  }
-
   if (widgetActionPending) {
     return;
   }
@@ -475,7 +384,6 @@ async function initWidgetView() {
   setupEl.classList.add("hidden");
   widgetEl.classList.remove("hidden");
 
-  await loadWidgetMode();
   initBars();
   setWidgetStatus("idle");
 
@@ -486,10 +394,20 @@ async function initWidgetView() {
     listen("audio_level", (event) => {
       renderLevel(event.payload || 0);
     }),
-    listen("status", async (event) => {
+    listen("status", (event) => {
       const payload = event.payload || {};
-      await loadWidgetMode();
       setWidgetStatus(payload.status || "idle", payload.message || "");
+    }),
+    listen("toggle_mode_active", () => {
+      isToggleMode = true;
+      pill.classList.remove("hold-mode");
+      pill.classList.add("toggle-mode");
+      setWidgetButtonsEnabled(true);
+      stopBtn.tabIndex = 0;
+      cancelBtn.tabIndex = 0;
+    }),
+    listen("model_ready", () => {
+      console.log("Model pre-loaded and ready");
     }),
   ]);
 
@@ -510,7 +428,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       widgetEl.classList.add("hidden");
       setupMessageEl.textContent =
         "Failed to initialize Tauri runtime API. Restart the app to retry.";
-      modeStatusEl.textContent = "Runtime API unavailable.";
       hotkeyHintEl.textContent = "Hotkey unavailable until runtime is restored.";
       downloadBtn.classList.add("hidden");
       return;
@@ -530,7 +447,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     setupEl.classList.remove("hidden");
     widgetEl.classList.add("hidden");
     setupMessageEl.textContent = `Frontend initialization failed: ${String(error)}`;
-    modeStatusEl.textContent = "Initialization error";
     hotkeyHintEl.textContent = "Hotkey unavailable until this error is resolved.";
     downloadBtn.classList.add("hidden");
   }

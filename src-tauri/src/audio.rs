@@ -189,8 +189,11 @@ impl AudioRecorder {
 }
 
 /// Trim leading and trailing silence below `threshold` RMS (per 480-sample window ≈ 30ms at 16kHz).
-fn trim_silence(samples: &[f32], threshold: f32) -> Vec<f32> {
+/// Keeps a tail padding after the last detected speech so trailing words aren't clipped.
+pub(crate) fn trim_silence(samples: &[f32], threshold: f32) -> Vec<f32> {
     const WINDOW: usize = 480;
+    // Keep ~0.5s of audio after the last voiced window to avoid clipping trailing words
+    const TAIL_PADDING: usize = 16_000 / 2; // 8000 samples = 500ms at 16kHz
 
     let is_silent = |chunk: &[f32]| -> bool {
         let sum_sq: f32 = chunk.iter().map(|s| s * s).sum();
@@ -198,17 +201,17 @@ fn trim_silence(samples: &[f32], threshold: f32) -> Vec<f32> {
     };
 
     // Find first non-silent window
-    let start = samples
-        .chunks(WINDOW)
-        .position(|w| !is_silent(w))
-        .unwrap_or(0)
-        * WINDOW;
+    let first_non_silent = samples.chunks(WINDOW).position(|w| !is_silent(w));
+    let start = match first_non_silent {
+        Some(i) => i * WINDOW,
+        None => return Vec::new(), // all windows are silent
+    };
 
-    // Find last non-silent window
+    // Find last non-silent window, then add tail padding
     let end = samples
         .chunks(WINDOW)
         .rposition(|w| !is_silent(w))
-        .map(|i| ((i + 1) * WINDOW).min(samples.len()))
+        .map(|i| ((i + 1) * WINDOW + TAIL_PADDING).min(samples.len()))
         .unwrap_or(samples.len());
 
     if start >= end {
@@ -255,7 +258,7 @@ fn capture_chunk(
     }
 }
 
-fn resample_linear(input: &[f32], in_rate: u32, out_rate: u32) -> Vec<f32> {
+pub(crate) fn resample_linear(input: &[f32], in_rate: u32, out_rate: u32) -> Vec<f32> {
     if input.is_empty() || in_rate == out_rate {
         return input.to_vec();
     }
@@ -275,4 +278,68 @@ fn resample_linear(input: &[f32], in_rate: u32, out_rate: u32) -> Vec<f32> {
     }
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resample_identity_when_rates_match() {
+        let input: Vec<f32> = (0..100).map(|i| i as f32 / 100.0).collect();
+        let output = resample_linear(&input, 16_000, 16_000);
+        assert_eq!(input, output);
+    }
+
+    #[test]
+    fn resample_empty_input() {
+        let output = resample_linear(&[], 48_000, 16_000);
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn resample_2_to_1_downsample() {
+        // 32kHz → 16kHz should roughly halve the length
+        let input: Vec<f32> = (0..1000).map(|i| (i as f32 * 0.01).sin()).collect();
+        let output = resample_linear(&input, 32_000, 16_000);
+        assert_eq!(output.len(), 500);
+    }
+
+    #[test]
+    fn resample_3_to_1_downsample() {
+        // 48kHz → 16kHz should produce ~1/3 the samples
+        let input: Vec<f32> = (0..900).map(|i| (i as f32 * 0.01).sin()).collect();
+        let output = resample_linear(&input, 48_000, 16_000);
+        assert_eq!(output.len(), 300);
+    }
+
+    #[test]
+    fn trim_silence_all_silent() {
+        let samples = vec![0.0f32; 2000];
+        let trimmed = trim_silence(&samples, 0.01);
+        assert!(trimmed.is_empty());
+    }
+
+    #[test]
+    fn trim_silence_preserves_non_silent_middle() {
+        // Build: 480 silent + 480 loud + 480 silent
+        let mut samples = vec![0.0f32; 480];
+        samples.extend(vec![0.5f32; 480]);
+        samples.extend(vec![0.0f32; 480]);
+
+        let trimmed = trim_silence(&samples, 0.01);
+        // Should contain the loud window plus tail padding (up to sample count limit)
+        // The loud window is 480 samples, then tail padding extends into the silent region
+        assert!(trimmed.len() >= 480);
+        assert!(trimmed.len() <= 480 + 480); // can't exceed total trailing samples
+        // First 480 samples must be the loud ones
+        assert!(trimmed[..480].iter().all(|&s| s == 0.5));
+    }
+
+    #[test]
+    fn trim_silence_no_trimming_when_all_loud() {
+        let samples = vec![0.5f32; 960];
+        let trimmed = trim_silence(&samples, 0.01);
+        assert_eq!(trimmed.len(), 960);
+    }
 }

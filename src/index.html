@@ -24,24 +24,6 @@
       </header>
 
       <section class="panel">
-        <h2>Recording Mode</h2>
-        <p class="panel-copy">Choose how the global hotkey behaves.</p>
-
-        <div id="mode-switch" class="mode-switch" role="radiogroup" aria-label="Recording mode">
-          <button id="mode-hold" class="mode-btn" type="button" data-mode="hold" role="radio">
-            <span class="mode-title">Hold to talk</span>
-            <span class="mode-copy">Hold hotkey to record, release to transcribe.</span>
-          </button>
-          <button id="mode-toggle" class="mode-btn" type="button" data-mode="toggle" role="radio">
-            <span class="mode-title">Toggle recording</span>
-            <span class="mode-copy">Press hotkey once to start, once to stop.</span>
-          </button>
-        </div>
-
-        <p id="mode-status" class="mode-status">Loading recording mode...</p>
-      </section>
-
-      <section class="panel">
         <h2>Whisper Model</h2>
         <p class="panel-copy">Larger models are more accurate but use more memory.</p>
         <div id="model-switch" class="mode-switch" role="radiogroup" aria-label="Whisper model">
@@ -73,7 +55,7 @@
         </div>
       </section>
 
-      <p id="hotkey-hint" class="hint">Hotkey: <code>Ctrl+Shift+Space</code></p>
+      <p id="hotkey-hint" class="hint">Hold <code>Ctrl+Shift+Space</code> to talk · Tap once to toggle on/off</p>
     </main>
 
     <main id="widget" class="widget-root hidden" aria-live="polite">

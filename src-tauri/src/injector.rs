@@ -4,28 +4,103 @@ use std::{thread, time::Duration};
 #[cfg(not(target_os = "macos"))]
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
+fn dlog_msg(msg: &str) {
+    eprintln!("{msg}");
+    crate::write_log(msg);
+}
+
+/// Returns true if this process has been granted macOS Accessibility permission.
+/// CGEvent::post() silently does nothing without it on a signed/bundled app.
+#[cfg(target_os = "macos")]
+pub fn is_accessibility_trusted() -> bool {
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrusted() -> bool;
+    }
+    unsafe { AXIsProcessTrusted() }
+}
+
+/// Triggers the macOS system dialog asking the user to grant Accessibility access.
+/// Safe to call multiple times — does nothing if already trusted.
+#[cfg(target_os = "macos")]
+pub fn request_accessibility_permission() {
+    use std::ffi::c_void;
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
+        static kAXTrustedCheckOptionPrompt: *const c_void;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        static kCFBooleanTrue: *const c_void;
+        // Declared as u8 so we can take their address to pass as *const c_void
+        static kCFTypeDictionaryKeyCallBacks: u8;
+        static kCFTypeDictionaryValueCallBacks: u8;
+        fn CFDictionaryCreate(
+            allocator: *const c_void,
+            keys: *const *const c_void,
+            values: *const *const c_void,
+            num_values: isize,
+            key_callbacks: *const c_void,
+            value_callbacks: *const c_void,
+        ) -> *const c_void;
+        fn CFRelease(cf: *const c_void);
+    }
+
+    unsafe {
+        let keys: [*const c_void; 1] = [kAXTrustedCheckOptionPrompt];
+        let values: [*const c_void; 1] = [kCFBooleanTrue];
+        let dict = CFDictionaryCreate(
+            std::ptr::null(),
+            keys.as_ptr(),
+            values.as_ptr(),
+            1,
+            &kCFTypeDictionaryKeyCallBacks as *const u8 as *const c_void,
+            &kCFTypeDictionaryValueCallBacks as *const u8 as *const c_void,
+        );
+        AXIsProcessTrustedWithOptions(dict);
+        if !dict.is_null() {
+            CFRelease(dict);
+        }
+    }
+}
+
 /// Paste text into the currently focused application.
 ///
 /// Strategy: set clipboard → trigger Cmd+V (or Ctrl+V) → wait → restore clipboard.
 /// macOS uses CGEvent API directly for reliability (no osascript process spawn).
 pub fn paste_text(text: &str) -> Result<(), String> {
-    eprintln!("injector: preparing clipboard");
+    #[cfg(target_os = "macos")]
+    {
+        let trusted = is_accessibility_trusted();
+        dlog_msg(&format!("injector: accessibility trusted = {trusted}"));
+        if !trusted {
+            return Err(
+                "Accessibility permission required. Go to System Settings → Privacy & Security → Accessibility and enable DraVis Flow, then restart the app.".to_string()
+            );
+        }
+    }
+
+    dlog_msg(&format!("injector: setting clipboard ({} chars)", text.len()));
     let mut clipboard = Clipboard::new().map_err(|e| format!("clipboard init failed: {e}"))?;
     let previous = clipboard.get_text().ok();
 
     clipboard
         .set_text(text.to_string())
         .map_err(|e| format!("clipboard set failed: {e}"))?;
+    dlog_msg("injector: clipboard set OK");
 
     // Give the pasteboard time to sync across processes
     thread::sleep(Duration::from_millis(50));
-    eprintln!("injector: triggering paste");
+    dlog_msg("injector: triggering paste keystroke");
 
     #[cfg(target_os = "macos")]
     {
         // Try CGEvent first (fastest, most reliable), fall back to osascript
         if let Err(e) = paste_cmd_v_cgevent() {
-            eprintln!("injector: CGEvent failed ({e}), falling back to osascript");
+            dlog_msg(&format!("injector: CGEvent failed ({e}), falling back to osascript"));
             paste_cmd_v_osascript()?;
         }
     }
@@ -52,7 +127,7 @@ pub fn paste_text(text: &str) -> Result<(), String> {
         let _ = clipboard.set_text(previous_text);
     }
 
-    eprintln!("injector: done");
+    dlog_msg("injector: paste sequence complete");
     Ok(())
 }
 
@@ -79,6 +154,7 @@ fn paste_cmd_v_cgevent() -> Result<(), String> {
     // Key code 9 = 'v' on US keyboard layout
     const KEY_V: CGKeyCode = 9;
 
+    dlog_msg("injector: creating CGEventSource (HIDSystemState)");
     let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
         .map_err(|_| "failed to create CGEventSource".to_string())?;
 
@@ -90,8 +166,10 @@ fn paste_cmd_v_cgevent() -> Result<(), String> {
         .map_err(|_| "failed to create key-up event".to_string())?;
     key_up.set_flags(CGEventFlags::CGEventFlagCommand);
 
+    dlog_msg("injector: posting CGEvent key-down (Cmd+V)");
     key_down.post(core_graphics::event::CGEventTapLocation::HID);
     thread::sleep(Duration::from_millis(10));
+    dlog_msg("injector: posting CGEvent key-up");
     key_up.post(core_graphics::event::CGEventTapLocation::HID);
 
     Ok(())

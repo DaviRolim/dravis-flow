@@ -11,10 +11,23 @@ Local, cross-platform voice-to-text desktop app with Tauri v2 + Rust.
 - System tray app with floating recording widget
 - First-run model download from Hugging Face
 
+## Prerequisites
+
+- **Rust** (via rustup):
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+- **CMake** (required to build whisper.cpp):
+
+```bash
+brew install cmake
+```
+
 ## Run
 
-1. Install prerequisites for Tauri v2 + Rust toolchain.
-2. Install frontend deps:
+1. Install frontend deps:
 
 ```bash
 npm install
