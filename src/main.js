@@ -38,14 +38,17 @@ let bars = [];
 let currentMode = "hold";
 let widgetActionPending = false;
 let waveformState = "idle";
-const BAR_COUNT = 26;
-const BAR_MIN_SCALE = 0.15;
+const BAR_COUNT = 24;
+const BAR_MIN_SCALE = 0.08;
 const BAR_MAX_SCALE = 1.0;
-const BAR_VARIATION_RANGE = 0.22;
-const BAR_VARIATION_RETARGET_MIN_MS = 60;
-const BAR_VARIATION_RETARGET_MAX_MS = 180;
-const BAR_GAUSSIAN_SIGMA = 0.42;
-const BAR_AMBIENT_BREATH = 0.05;
+const BAR_VARIATION_RANGE = 0.25;
+const BAR_VARIATION_RETARGET_MIN_MS = 40;
+const BAR_VARIATION_RETARGET_MAX_MS = 140;
+const BAR_GAUSSIAN_SIGMA = 0.38;
+const BAR_AMBIENT_BREATH = 0.06;
+// RMS from mic is typically 0.01-0.15 — amplify to fill 0-1 range
+const LEVEL_GAIN = 8.0;
+const LEVEL_EXPONENT = 0.6; // compress dynamic range (sqrt-ish)
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -137,7 +140,7 @@ function initBars() {
     );
     return 0.18 + gaussian * 0.82;
   });
-  barResponseRates = bars.map(() => randomBetween(0.3, 0.4));
+  barResponseRates = bars.map(() => randomBetween(0.35, 0.55));
   barPhaseOffsets = bars.map((_, index) => index * 0.24 + randomBetween(-0.2, 0.2));
   barVariationTargets = bars.map(() => 1);
   barVariations = bars.map(() => 1);
@@ -174,7 +177,10 @@ let waveformAnimationFrame = 0;
 let lastWaveformTimestamp = 0;
 
 function renderLevel(level) {
-  pendingLevel = clamp(Number(level || 0), 0, 1);
+  // Amplify raw RMS and compress dynamic range so speech fills the bars
+  const raw = clamp(Number(level || 0), 0, 1);
+  const amplified = Math.pow(clamp(raw * LEVEL_GAIN, 0, 1), LEVEL_EXPONENT);
+  pendingLevel = amplified;
 }
 
 function animateWaveform(timestamp) {
@@ -183,7 +189,9 @@ function animateWaveform(timestamp) {
   const seconds = timestamp * 0.001;
 
   const inputTarget = waveformState === "recording" ? pendingLevel : 0;
-  smoothedLevel += (inputTarget - smoothedLevel) * 0.34;
+  // Faster attack, slower decay for punchy response
+  const attackRate = inputTarget > smoothedLevel ? 0.55 : 0.18;
+  smoothedLevel += (inputTarget - smoothedLevel) * attackRate;
   const normalizedLevel = clamp(smoothedLevel, 0, 1);
 
   const glowLevel =
@@ -216,13 +224,17 @@ function animateWaveform(timestamp) {
 
     let lift = 0;
     if (waveformState === "recording") {
-      const dynamicLift = normalizedLevel * (0.14 + weight * 0.94);
-      lift = dynamicLift + ambientLift * (normalizedLevel < 0.04 ? 0.8 : 0.32);
+      // Bars should really move — weight shapes the gaussian, level drives amplitude
+      const dynamicLift = normalizedLevel * (0.3 + weight * 0.7);
+      // When quiet, keep subtle ambient motion; when loud, go full
+      const quietBlend = normalizedLevel < 0.05 ? 1.0 : 0.15;
+      lift = dynamicLift + ambientLift * quietBlend;
     } else if (waveformState === "processing") {
-      // Fade to minimum — no wave animation during processing
-      lift = 0;
+      // Gentle synchronized pulse — all bars breathe together, fading down
+      const pulse = Math.sin(seconds * 2.4) * 0.5 + 0.5;
+      lift = pulse * 0.12 * weight;
     } else {
-      lift = ambientLift * 0.6;
+      lift = ambientLift * 0.5;
     }
 
     const variedLift = lift * nextVariation;
@@ -280,13 +292,8 @@ function setWidgetStatus(status, message = "") {
     pendingLevel = 0;
     setWidgetButtonsEnabled(false);
     pill.classList.add("processing", "visible");
-    // Bars fade down naturally via the animation loop (inputTarget becomes 0)
-    // No need to keep animating — stop after a short fade
-    window.setTimeout(() => {
-      if (waveformState === "processing") {
-        stopWaveformAnimation();
-      }
-    }, 600);
+    // Keep animation for gentle breathing pulse
+    startWaveformAnimation();
     return;
   }
 
