@@ -444,13 +444,13 @@ body.view-widget {
   align-items: flex-end;
   justify-content: center;
   gap: 2px;
-  height: 28px;
+  height: 44px;
 }
 
 .waveform .bar {
   --bar-energy: 0;
-  width: 2px;
-  height: 24px;
+  width: 2.5px;
+  height: 40px;
   background: linear-gradient(
     180deg,
     var(--color-accent-secondary),

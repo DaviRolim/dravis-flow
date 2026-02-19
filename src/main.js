@@ -24,13 +24,13 @@ let currentMode = "hold";
 let widgetActionPending = false;
 let waveformState = "idle";
 const BAR_COUNT = 26;
-const BAR_MIN_SCALE = 0.18;
-const BAR_MAX_SCALE = 1.34;
-const BAR_VARIATION_RANGE = 0.18;
-const BAR_VARIATION_RETARGET_MIN_MS = 80;
-const BAR_VARIATION_RETARGET_MAX_MS = 220;
-const BAR_GAUSSIAN_SIGMA = 0.38;
-const BAR_AMBIENT_BREATH = 0.038;
+const BAR_MIN_SCALE = 0.12;
+const BAR_MAX_SCALE = 1.0;
+const BAR_VARIATION_RANGE = 0.22;
+const BAR_VARIATION_RETARGET_MIN_MS = 60;
+const BAR_VARIATION_RETARGET_MAX_MS = 180;
+const BAR_GAUSSIAN_SIGMA = 0.42;
+const BAR_AMBIENT_BREATH = 0.05;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));

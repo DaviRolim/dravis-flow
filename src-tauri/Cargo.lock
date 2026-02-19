@@ -992,6 +992,7 @@ name = "dravis-flow"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "core-graphics 0.24.0",
  "cpal",
  "dirs",
  "enigo",
