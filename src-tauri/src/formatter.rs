@@ -1,3 +1,35 @@
+use crate::config::ReplacementEntry;
+
+/// Apply dictionary replacements after formatting.
+/// Whole-word, case-insensitive match → replace with exact `to` spelling.
+pub fn apply_replacements(text: &str, replacements: &[ReplacementEntry]) -> String {
+    if replacements.is_empty() {
+        return text.to_string();
+    }
+
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut out = Vec::with_capacity(words.len());
+
+    for word in &words {
+        let stripped = word.trim_end_matches(|c: char| c == ',' || c == '.' || c == '!' || c == '?');
+        let trailing = &word[stripped.len()..];
+
+        let mut replaced = false;
+        for entry in replacements {
+            if stripped.eq_ignore_ascii_case(&entry.from) {
+                out.push(format!("{}{trailing}", entry.to));
+                replaced = true;
+                break;
+            }
+        }
+        if !replaced {
+            out.push(word.to_string());
+        }
+    }
+
+    out.join(" ")
+}
+
 pub fn format_text(input: &str) -> String {
     let cleaned = smart_cleanup(input);
     let text = cleaned.trim();

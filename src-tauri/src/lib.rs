@@ -278,9 +278,9 @@ async fn cancel_recording_inner(app: AppHandle) -> Result<(), String> {
 async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
     let state = app.state::<AppState>();
 
-    let (audio, language, formatting_level, model_path_str) = with_state(&state, |inner| {
+    let (audio, language, formatting_level, model_path_str, dict_words, dict_replacements) = with_state(&state, |inner| {
         if inner.status != AppStatus::Recording {
-            return Ok((Vec::new(), String::new(), String::new(), String::new()));
+            return Ok((Vec::new(), String::new(), String::new(), String::new(), Vec::new(), Vec::new()));
         }
 
         inner.status = AppStatus::Processing;
@@ -294,6 +294,8 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
             inner.config.general.language.clone(),
             inner.config.formatting.level.clone(),
             model_path,
+            inner.config.dictionary.words.clone(),
+            inner.config.dictionary.replacements.clone(),
         ))
     })?;
 
@@ -337,16 +339,18 @@ async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
             dlog!("pipeline: whisper model loaded and cached");
         }
 
-        whisper::transcribe_with_ctx(&ctx_lock.as_ref().unwrap().0, &audio, &language)
+        whisper::transcribe_with_ctx(&ctx_lock.as_ref().unwrap().0, &audio, &language, &dict_words)
     })
     .await
     .map_err(|e| format!("transcription task failed: {e}"))??;
     dlog!("pipeline: transcription done, raw len={}", raw_text.len());
 
     let formatted = if formatting_level == "basic" {
-        formatter::format_text(&raw_text)
+        let text = formatter::format_text(&raw_text);
+        formatter::apply_replacements(&text, &dict_replacements)
     } else {
-        raw_text.trim().to_string()
+        let text = raw_text.trim().to_string();
+        formatter::apply_replacements(&text, &dict_replacements)
     };
 
     if formatted.trim().is_empty() {

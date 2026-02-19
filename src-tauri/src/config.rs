@@ -24,11 +24,29 @@ pub struct FormattingConfig {
     pub level: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DictionaryConfig {
+    /// Words/terms Whisper should recognize (fed into initial_prompt as glossary)
+    #[serde(default)]
+    pub words: Vec<String>,
+    /// Post-transcription replacements: "from -> to"
+    #[serde(default)]
+    pub replacements: Vec<ReplacementEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplacementEntry {
+    pub from: String,
+    pub to: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub general: GeneralConfig,
     pub model: ModelConfig,
     pub formatting: FormattingConfig,
+    #[serde(default)]
+    pub dictionary: DictionaryConfig,
 }
 
 impl Default for AppConfig {
@@ -45,6 +63,30 @@ impl Default for AppConfig {
             },
             formatting: FormattingConfig {
                 level: "basic".to_string(),
+            },
+            dictionary: DictionaryConfig {
+                words: vec![
+                    // Dev tools & runtimes
+                    "Bun", "Tauri", "Rust", "Cargo", "Svelte", "SvelteKit",
+                    "TypeScript", "JavaScript", "Node.js", "npm", "pnpm",
+                    "React", "Vue", "Next.js", "Vite",
+                    // Languages & frameworks
+                    "Flutter", "Dart", "Clojure", "Python", "Go", "Golang",
+                    // AI / ML
+                    "Whisper", "GPT", "Claude", "LLM", "OpenAI", "Anthropic",
+                    "Haiku", "Sonnet", "Opus",
+                    // Git & DevOps
+                    "Git", "GitHub", "GitLab", "CI/CD", "Docker", "Kubernetes",
+                    // Common CLI
+                    "npm install", "bun run", "cargo build", "git push",
+                    "tauri dev", "bun run tauri dev",
+                    // Platforms
+                    "macOS", "Linux", "Ubuntu", "AWS", "Vercel", "Tailscale",
+                    // Web
+                    "Tailwind", "CSS", "HTML", "API", "REST", "GraphQL",
+                    "WebSocket", "JSON", "TOML", "YAML",
+                ].into_iter().map(String::from).collect(),
+                replacements: vec![],
             },
         }
     }
