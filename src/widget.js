@@ -287,6 +287,12 @@ export async function initWidgetView(invoke, listen) {
   initBars(waveformEl);
   setWidgetStatus(pill, waveformEl, stopBtn, cancelBtn, "idle");
 
+  // Prevent mousedown from stealing key window / focus from the target app.
+  // Without this, clicking the button activates the DraVis webview as key window,
+  // and the subsequent paste lands in the wrong place.
+  stopBtn.addEventListener("mousedown", (e) => e.preventDefault());
+  cancelBtn.addEventListener("mousedown", (e) => e.preventDefault());
+
   stopBtn.addEventListener("click", () =>
     runWidgetAction(invoke, pill, waveformEl, stopBtn, cancelBtn, "stop_recording"),
   );

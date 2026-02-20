@@ -65,6 +65,9 @@ pub struct InnerState {
     pub toggle_shortcut_held: bool,
     pub press_instant: Option<std::time::Instant>,
     pub toggle_active: bool,
+    /// PID of the app that was frontmost when recording started.
+    /// Used to restore focus before pasting so Cmd+V reaches the right app.
+    pub previous_app_pid: Option<i32>,
 }
 
 impl InnerState {
@@ -72,6 +75,7 @@ impl InnerState {
         self.status = AppStatus::Idle;
         self.toggle_active = false;
         self.press_instant = None;
+        self.previous_app_pid = None;
     }
 }
 
@@ -88,6 +92,7 @@ impl AppState {
                 toggle_shortcut_held: false,
                 press_instant: None,
                 toggle_active: false,
+                previous_app_pid: None,
             }),
             whisper_ctx: Mutex::new(None),
             model_ready: Arc::new(AtomicBool::new(true)),

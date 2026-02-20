@@ -24,6 +24,91 @@ fn dlog_msg(msg: &str) {
     crate::write_log(msg);
 }
 
+/// Returns the process ID of the currently frontmost application.
+/// Used to restore focus to the target app before pasting.
+#[cfg(target_os = "macos")]
+pub fn get_frontmost_app_pid() -> Option<i32> {
+    use std::ffi::c_char;
+    use std::os::raw::{c_int, c_void};
+
+    extern "C" {
+        fn objc_getClass(name: *const c_char) -> *const c_void;
+        fn sel_registerName(name: *const c_char) -> *const c_void;
+        fn objc_msgSend(recv: *const c_void, sel: *const c_void) -> *const c_void;
+    }
+
+    type MsgSendRetInt = unsafe extern "C" fn(*const c_void, *const c_void) -> c_int;
+
+    unsafe {
+        let ws_cls = objc_getClass(b"NSWorkspace\0".as_ptr() as *const c_char);
+        if ws_cls.is_null() {
+            return None;
+        }
+        let sel_shared = sel_registerName(b"sharedWorkspace\0".as_ptr() as *const c_char);
+        let workspace = objc_msgSend(ws_cls, sel_shared);
+        if workspace.is_null() {
+            return None;
+        }
+        let sel_frontmost = sel_registerName(b"frontmostApplication\0".as_ptr() as *const c_char);
+        let front_app = objc_msgSend(workspace, sel_frontmost);
+        if front_app.is_null() {
+            return None;
+        }
+        let sel_pid = sel_registerName(b"processIdentifier\0".as_ptr() as *const c_char);
+        // pid_t is i32; transmute to the correct return-type variant
+        let msg_int: MsgSendRetInt = std::mem::transmute(objc_msgSend as *const ());
+        let pid = msg_int(front_app, sel_pid);
+        if pid > 0 {
+            Some(pid)
+        } else {
+            None
+        }
+    }
+}
+
+/// Brings the application with the given PID to the foreground.
+/// Called just before pasting to ensure Cmd+V reaches the target app.
+#[cfg(target_os = "macos")]
+pub fn activate_app_by_pid(pid: i32) {
+    use std::ffi::c_char;
+    use std::os::raw::{c_int, c_void};
+
+    extern "C" {
+        fn objc_getClass(name: *const c_char) -> *const c_void;
+        fn sel_registerName(name: *const c_char) -> *const c_void;
+        fn objc_msgSend(recv: *const c_void, sel: *const c_void) -> *const c_void;
+    }
+
+    // NSApplicationActivateIgnoringOtherApps = 1 << 1 = 2
+    const ACTIVATE_IGNORING_OTHER_APPS: u64 = 2;
+
+    type MsgSendRetPtrWithInt =
+        unsafe extern "C" fn(*const c_void, *const c_void, c_int) -> *const c_void;
+    type MsgSendRetBoolWithU64 =
+        unsafe extern "C" fn(*const c_void, *const c_void, u64) -> u8;
+
+    unsafe {
+        let cls = objc_getClass(b"NSRunningApplication\0".as_ptr() as *const c_char);
+        if cls.is_null() {
+            return;
+        }
+        let sel_with_pid = sel_registerName(
+            b"runningApplicationWithProcessIdentifier:\0".as_ptr() as *const c_char,
+        );
+        let msg_with_int: MsgSendRetPtrWithInt =
+            std::mem::transmute(objc_msgSend as *const ());
+        let app = msg_with_int(cls, sel_with_pid, pid as c_int);
+        if app.is_null() {
+            return;
+        }
+        let sel_activate =
+            sel_registerName(b"activateWithOptions:\0".as_ptr() as *const c_char);
+        let msg_activate: MsgSendRetBoolWithU64 =
+            std::mem::transmute(objc_msgSend as *const ());
+        let _ = msg_activate(app, sel_activate, ACTIVATE_IGNORING_OTHER_APPS);
+    }
+}
+
 /// Returns true if this process has been granted macOS Accessibility permission.
 /// CGEvent::post() silently does nothing without it on a signed/bundled app.
 #[cfg(target_os = "macos")]

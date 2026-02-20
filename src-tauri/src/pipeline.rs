@@ -43,6 +43,18 @@ pub async fn start_recording_inner(app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
+    // Capture which app had focus before we show the widget.
+    // We'll reactivate it just before pasting so Cmd+V reaches the right target.
+    #[cfg(target_os = "macos")]
+    {
+        let pid = crate::injector::get_frontmost_app_pid();
+        dlog!("pipeline: captured previous app pid = {:?}", pid);
+        with_state(&state, |inner| {
+            inner.previous_app_pid = pid;
+            Ok(())
+        })?;
+    }
+
     set_widget_state(&app, "recording", None);
 
     let app_for_level = app.clone();
@@ -223,13 +235,23 @@ pub async fn stop_recording_inner(app: AppHandle) -> Result<String, String> {
         }
     }
 
-    // Hide the widget BEFORE pasting so the target app regains focus.
-    // Without this, Cmd+V goes to the widget window (which has focus if
-    // the user clicked its stop button) instead of the intended app.
+    // Hide the widget and restore focus to the app that was active when
+    // recording started. This ensures Cmd+V reaches the right target even
+    // when the user clicked the stop button (which can activate our app).
     if let Some(widget) = app.get_webview_window("widget") {
         let _ = widget.hide();
     }
-    // Give the target app time to regain focus after the widget hides
+
+    #[cfg(target_os = "macos")]
+    {
+        let prev_pid = with_state(&state, |inner| Ok(inner.previous_app_pid))?;
+        if let Some(pid) = prev_pid {
+            dlog!("pipeline: restoring focus to pid {pid}");
+            crate::injector::activate_app_by_pid(pid);
+        }
+    }
+
+    // Give the target app time to become frontmost before we send Cmd+V.
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     dlog!("pipeline: injecting text len={}", output_text.len());
